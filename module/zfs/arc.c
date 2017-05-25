@@ -303,6 +303,8 @@
 #include <sys/kstat.h>
 #include <sys/dmu_tx.h>
 #include <zfs_fletcher.h>
+#include <sys/aggsum.h>
+#include <sys/cityhash.h>
 #include <sys/arc_impl.h>
 #include <sys/trace_arc.h>
 
@@ -477,6 +479,7 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_c;
 	kstat_named_t arcstat_c_min;
 	kstat_named_t arcstat_c_max;
+	/* Not updated directly; only synced in arc_kstat_update. */
 	kstat_named_t arcstat_size;
 	/*
 	 * Number of compressed bytes stored in the arc_buf_hdr_t's b_pabd.
@@ -505,12 +508,14 @@ typedef struct arc_stats {
 	 * (allocated via arc_buf_hdr_t_full and arc_buf_hdr_t_l2only
 	 * caches), and arc_buf_t structures (allocated via arc_buf_t
 	 * cache).
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_hdr_size;
 	/*
 	 * Number of bytes consumed by ARC buffers of type equal to
 	 * ARC_BUFC_DATA. This is generally consumed by buffers backing
 	 * on disk user data (e.g. plain file contents).
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_data_size;
 	/*
@@ -518,6 +523,7 @@ typedef struct arc_stats {
 	 * ARC_BUFC_METADATA. This is generally consumed by buffers
 	 * backing on disk data that is used for internal ZFS
 	 * structures (e.g. ZAP, dnode, indirect blocks, etc).
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_metadata_size;
 	/*
@@ -525,7 +531,12 @@ typedef struct arc_stats {
 	 */
 	kstat_named_t arcstat_dbuf_size;
 	/*
-	 * Number of bytes consumed by dnode_t objects.
+	 * Number of bytes consumed by various buffers and structures
+	 * not actually backed with ARC buffers. This includes bonus
+	 * buffers (allocated directly via zio_buf_* functions),
+	 * dmu_buf_impl_t structures (allocated via dmu_buf_impl_t
+	 * cache), and dnode_t structures (allocated via dnode_t cache).
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_dnode_size;
 	/*
@@ -537,6 +548,7 @@ typedef struct arc_stats {
 	 * arc_anon state. This includes *all* buffers in the arc_anon
 	 * state; e.g. data, metadata, evictable, and unevictable buffers
 	 * are all included in this value.
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_anon_size;
 	/*
@@ -544,6 +556,7 @@ typedef struct arc_stats {
 	 * following criteria: backing buffers of type ARC_BUFC_DATA,
 	 * residing in the arc_anon state, and are eligible for eviction
 	 * (e.g. have no outstanding holds on the buffer).
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_anon_evictable_data;
 	/*
@@ -551,6 +564,7 @@ typedef struct arc_stats {
 	 * following criteria: backing buffers of type ARC_BUFC_METADATA,
 	 * residing in the arc_anon state, and are eligible for eviction
 	 * (e.g. have no outstanding holds on the buffer).
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_anon_evictable_metadata;
 	/*
@@ -558,6 +572,7 @@ typedef struct arc_stats {
 	 * arc_mru state. This includes *all* buffers in the arc_mru
 	 * state; e.g. data, metadata, evictable, and unevictable buffers
 	 * are all included in this value.
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_mru_size;
 	/*
@@ -565,6 +580,7 @@ typedef struct arc_stats {
 	 * following criteria: backing buffers of type ARC_BUFC_DATA,
 	 * residing in the arc_mru state, and are eligible for eviction
 	 * (e.g. have no outstanding holds on the buffer).
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_mru_evictable_data;
 	/*
@@ -572,6 +588,7 @@ typedef struct arc_stats {
 	 * following criteria: backing buffers of type ARC_BUFC_METADATA,
 	 * residing in the arc_mru state, and are eligible for eviction
 	 * (e.g. have no outstanding holds on the buffer).
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_mru_evictable_metadata;
 	/*
@@ -582,18 +599,21 @@ typedef struct arc_stats {
 	 * don't actually have ARC buffers linked off of these headers.
 	 * Thus, *if* the headers had associated ARC buffers, these
 	 * buffers *would have* consumed this number of bytes.
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_mru_ghost_size;
 	/*
 	 * Number of bytes that *would have been* consumed by ARC
 	 * buffers that are eligible for eviction, of type
 	 * ARC_BUFC_DATA, and linked off the arc_mru_ghost state.
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_mru_ghost_evictable_data;
 	/*
 	 * Number of bytes that *would have been* consumed by ARC
 	 * buffers that are eligible for eviction, of type
 	 * ARC_BUFC_METADATA, and linked off the arc_mru_ghost state.
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_mru_ghost_evictable_metadata;
 	/*
@@ -601,36 +621,42 @@ typedef struct arc_stats {
 	 * arc_mfu state. This includes *all* buffers in the arc_mfu
 	 * state; e.g. data, metadata, evictable, and unevictable buffers
 	 * are all included in this value.
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_mfu_size;
 	/*
 	 * Number of bytes consumed by ARC buffers that are eligible for
 	 * eviction, of type ARC_BUFC_DATA, and reside in the arc_mfu
 	 * state.
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_mfu_evictable_data;
 	/*
 	 * Number of bytes consumed by ARC buffers that are eligible for
 	 * eviction, of type ARC_BUFC_METADATA, and reside in the
 	 * arc_mfu state.
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_mfu_evictable_metadata;
 	/*
 	 * Total number of bytes that *would have been* consumed by ARC
 	 * buffers in the arc_mfu_ghost state. See the comment above
 	 * arcstat_mru_ghost_size for more details.
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_mfu_ghost_size;
 	/*
 	 * Number of bytes that *would have been* consumed by ARC
 	 * buffers that are eligible for eviction, of type
 	 * ARC_BUFC_DATA, and linked off the arc_mfu_ghost state.
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_mfu_ghost_evictable_data;
 	/*
 	 * Number of bytes that *would have been* consumed by ARC
 	 * buffers that are eligible for eviction, of type
 	 * ARC_BUFC_METADATA, and linked off the arc_mru_ghost state.
+	 * Not updated directly; only synced in arc_kstat_update.
 	 */
 	kstat_named_t arcstat_mfu_ghost_evictable_metadata;
 	kstat_named_t arcstat_l2_hits;
@@ -652,6 +678,7 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_l2_io_error;
 	kstat_named_t arcstat_l2_lsize;
 	kstat_named_t arcstat_l2_psize;
+	/* Not updated directly; only synced in arc_kstat_update. */
 	kstat_named_t arcstat_l2_hdr_size;
 	kstat_named_t arcstat_memory_throttle_count;
 	kstat_named_t arcstat_memory_direct_count;
@@ -663,6 +690,7 @@ typedef struct arc_stats {
 	kstat_named_t arcstat_tempreserve;
 	kstat_named_t arcstat_loaned_bytes;
 	kstat_named_t arcstat_prune;
+	/* Not updated directly; only synced in arc_kstat_update. */
 	kstat_named_t arcstat_meta_used;
 	kstat_named_t arcstat_meta_limit;
 	kstat_named_t arcstat_dnode_limit;
@@ -831,7 +859,6 @@ static arc_state_t	*arc_l2c_only;
  * the possibility of inconsistency by having shadow copies of the variables,
  * while still allowing the code to be readable.
  */
-#define	arc_size	ARCSTAT(arcstat_size)	/* actual total arc size */
 #define	arc_p		ARCSTAT(arcstat_p)	/* target size of MRU */
 #define	arc_c		ARCSTAT(arcstat_c)	/* target size of cache */
 #define	arc_c_min	ARCSTAT(arcstat_c_min)	/* min target cache size */
@@ -842,7 +869,6 @@ static arc_state_t	*arc_l2c_only;
 #define	arc_meta_limit	ARCSTAT(arcstat_meta_limit) /* max size for metadata */
 #define	arc_dnode_limit	ARCSTAT(arcstat_dnode_limit) /* max size for dnodes */
 #define	arc_meta_min	ARCSTAT(arcstat_meta_min) /* min size for metadata */
-#define	arc_meta_used	ARCSTAT(arcstat_meta_used) /* size of metadata */
 #define	arc_meta_max	ARCSTAT(arcstat_meta_max) /* max size of metadata */
 #define	arc_dbuf_size	ARCSTAT(arcstat_dbuf_size) /* dbuf metadata */
 #define	arc_dnode_size	ARCSTAT(arcstat_dnode_size) /* dnode metadata */
@@ -862,6 +888,21 @@ static arc_state_t	*arc_l2c_only;
 static list_t arc_prune_list;
 static kmutex_t arc_prune_mtx;
 static taskq_t *arc_prune_taskq;
+/*
+ * There are also some ARC variables that we want to export, but that are
+ * updated so often that having the canonical representation be the statistic
+ * variable causes a performance bottleneck. We want to use aggsum_t's for these
+ * instead, but still be able to export the kstat in the same way as before.
+ * The solution is to always use the aggsum version, except in the kstat update
+ * callback.
+ */
+aggsum_t arc_size;
+aggsum_t arc_meta_used;
+aggsum_t astat_data_size;
+aggsum_t astat_metadata_size;
+aggsum_t astat_hdr_size;
+aggsum_t astat_other_size;
+aggsum_t astat_l2_hdr_size;
 
 #define	GHOST_STATE(state)	\
 	((state) == arc_mru_ghost || (state) == arc_mfu_ghost ||	\
@@ -1052,21 +1093,15 @@ static inline void arc_hdr_clear_flags(arc_buf_hdr_t *hdr, arc_flags_t flags);
 static boolean_t l2arc_write_eligible(uint64_t, arc_buf_hdr_t *);
 static void l2arc_read_done(zio_t *);
 
+
+/*
+ * We use Cityhash for this. It's fast, and has good hash properties without
+ * requiring any large static buffers.
+ */
 static uint64_t
 buf_hash(uint64_t spa, const dva_t *dva, uint64_t birth)
 {
-	uint8_t *vdva = (uint8_t *)dva;
-	uint64_t crc = -1ULL;
-	int i;
-
-	ASSERT(zfs_crc64_table[128] == ZFS_CRC64_POLY);
-
-	for (i = 0; i < sizeof (dva_t); i++)
-		crc = (crc >> 8) ^ zfs_crc64_table[(crc ^ vdva[i]) & 0xFF];
-
-	crc ^= (spa>>8) ^ birth;
-
-	return (crc);
+	return (cityhash4(spa, dva->dva_word[0], dva->dva_word[1], birth));
 }
 
 #define	HDR_EMPTY(hdr)						\
@@ -2694,10 +2729,10 @@ arc_space_consume(uint64_t space, arc_space_type_t type)
 	default:
 		break;
 	case ARC_SPACE_DATA:
-		ARCSTAT_INCR(arcstat_data_size, space);
+		aggsum_add(&astat_data_size, space);
 		break;
 	case ARC_SPACE_META:
-		ARCSTAT_INCR(arcstat_metadata_size, space);
+		aggsum_add(&astat_metadata_size, space);
 		break;
 	case ARC_SPACE_BONUS:
 		ARCSTAT_INCR(arcstat_bonus_size, space);
@@ -2709,17 +2744,17 @@ arc_space_consume(uint64_t space, arc_space_type_t type)
 		ARCSTAT_INCR(arcstat_dbuf_size, space);
 		break;
 	case ARC_SPACE_HDRS:
-		ARCSTAT_INCR(arcstat_hdr_size, space);
+		aggsum_add(&astat_hdr_size, space);
 		break;
 	case ARC_SPACE_L2HDRS:
-		ARCSTAT_INCR(arcstat_l2_hdr_size, space);
+		aggsum_add(&astat_l2_hdr_size, space);
 		break;
 	}
 
 	if (type != ARC_SPACE_DATA)
-		ARCSTAT_INCR(arcstat_meta_used, space);
+		aggsum_add(&arc_meta_used, space);
 
-	atomic_add_64(&arc_size, space);
+	aggsum_add(&arc_size, space);
 }
 
 void
@@ -2731,10 +2766,10 @@ arc_space_return(uint64_t space, arc_space_type_t type)
 	default:
 		break;
 	case ARC_SPACE_DATA:
-		ARCSTAT_INCR(arcstat_data_size, -space);
+		aggsum_add(&astat_data_size, -space);
 		break;
 	case ARC_SPACE_META:
-		ARCSTAT_INCR(arcstat_metadata_size, -space);
+		aggsum_add(&astat_metadata_size, -space);
 		break;
 	case ARC_SPACE_BONUS:
 		ARCSTAT_INCR(arcstat_bonus_size, -space);
@@ -2746,22 +2781,27 @@ arc_space_return(uint64_t space, arc_space_type_t type)
 		ARCSTAT_INCR(arcstat_dbuf_size, -space);
 		break;
 	case ARC_SPACE_HDRS:
-		ARCSTAT_INCR(arcstat_hdr_size, -space);
+		aggsum_add(&astat_hdr_size, -space);
 		break;
 	case ARC_SPACE_L2HDRS:
-		ARCSTAT_INCR(arcstat_l2_hdr_size, -space);
+		aggsum_add(&astat_l2_hdr_size, -space);
 		break;
 	}
 
 	if (type != ARC_SPACE_DATA) {
-		ASSERT(arc_meta_used >= space);
-		if (arc_meta_max < arc_meta_used)
-			arc_meta_max = arc_meta_used;
-		ARCSTAT_INCR(arcstat_meta_used, -space);
+		ASSERT(aggsum_compare(&arc_meta_used, space) >= 0);
+		/*
+		 * We use the upper bound here rather than the precise value
+		 * because the arc_meta_max value doesn't need to be
+		 * precise. It's only consumed by humans via arcstats.
+		 */
+		if (arc_meta_max < aggsum_upper_bound(&arc_meta_used))
+			arc_meta_max = aggsum_upper_bound(&arc_meta_used);
+		aggsum_add(&arc_meta_used, -space);
 	}
 
-	ASSERT(arc_size >= space);
-	atomic_add_64(&arc_size, -space);
+	ASSERT(aggsum_compare(&arc_size, space) >= 0);
+	aggsum_add(&arc_size, -space);
 }
 
 /*
@@ -4281,7 +4321,7 @@ arc_adjust_impl(arc_state_t *state, uint64_t spa, int64_t bytes,
  * available for reclaim.
  */
 static uint64_t
-arc_adjust_meta_balanced(void)
+arc_adjust_meta_balanced(uint64_t arc_meta_used)
 {
 	int64_t delta, prune = 0, adjustmnt;
 	uint64_t total_evicted = 0;
@@ -4371,7 +4411,7 @@ restart:
  * capped by the arc_meta_limit tunable.
  */
 static uint64_t
-arc_adjust_meta_only(void)
+arc_adjust_meta_only(uint64_t meta_used)
 {
 	uint64_t total_evicted = 0;
 	int64_t target;
@@ -4383,7 +4423,7 @@ arc_adjust_meta_only(void)
 	 * we're over the meta limit more than we're over arc_p, we
 	 * evict some from the MRU here, and some from the MFU below.
 	 */
-	target = MIN((int64_t)(arc_meta_used - arc_meta_limit),
+	target = MIN((int64_t)(meta_used - arc_meta_limit),
 	    (int64_t)(refcount_count(&arc_anon->arcs_size) +
 	    refcount_count(&arc_mru->arcs_size) - arc_p));
 
@@ -4394,8 +4434,9 @@ arc_adjust_meta_only(void)
 	 * below the meta limit, but not so much as to drop us below the
 	 * space allotted to the MFU (which is defined as arc_c - arc_p).
 	 */
-	target = MIN((int64_t)(arc_meta_used - arc_meta_limit),
-	    (int64_t)(refcount_count(&arc_mfu->arcs_size) - (arc_c - arc_p)));
+	target = MIN((int64_t)(meta_used - arc_meta_limit),
+	    (int64_t)(refcount_count(&arc_mfu->arcs_size) -
+	    (arc_c - arc_p)));
 
 	total_evicted += arc_adjust_impl(arc_mfu, 0, target, ARC_BUFC_METADATA);
 
@@ -4403,12 +4444,12 @@ arc_adjust_meta_only(void)
 }
 
 static uint64_t
-arc_adjust_meta(void)
+arc_adjust_meta(uint64_t meta_used)
 {
 	if (zfs_arc_meta_strategy == ARC_STRATEGY_META_ONLY)
-		return (arc_adjust_meta_only());
+		return (arc_adjust_meta_only(meta_used));
 	else
-		return (arc_adjust_meta_balanced());
+		return (arc_adjust_meta_balanced(meta_used));
 }
 
 /*
@@ -4495,12 +4536,14 @@ arc_adjust(void)
 	uint64_t total_evicted = 0;
 	uint64_t bytes;
 	int64_t target;
+	uint64_t asize = aggsum_value(&arc_size);
+	uint64_t ameta = aggsum_value(&arc_meta_used);
 
 	/*
 	 * If we're over arc_meta_limit, we want to correct that before
 	 * potentially evicting data buffers below.
 	 */
-	total_evicted += arc_adjust_meta();
+	total_evicted += arc_adjust_meta(ameta);
 
 	/*
 	 * Adjust MRU size
@@ -4512,9 +4555,9 @@ arc_adjust(void)
 	 * the MRU is over arc_p, we'll evict enough to get back to
 	 * arc_p here, and then evict more from the MFU below.
 	 */
-	target = MIN((int64_t)(arc_size - arc_c),
+	target = MIN((int64_t)(asize - arc_c),
 	    (int64_t)(refcount_count(&arc_anon->arcs_size) +
-	    refcount_count(&arc_mru->arcs_size) + arc_meta_used - arc_p));
+	    refcount_count(&arc_mru->arcs_size) + ameta - arc_p));
 
 	/*
 	 * If we're below arc_meta_min, always prefer to evict data.
@@ -4525,7 +4568,7 @@ arc_adjust(void)
 	 * type, spill over into the next type.
 	 */
 	if (arc_adjust_type(arc_mru) == ARC_BUFC_METADATA &&
-	    arc_meta_used > arc_meta_min) {
+	    ameta > arc_meta_min) {
 		bytes = arc_adjust_impl(arc_mru, 0, target, ARC_BUFC_METADATA);
 		total_evicted += bytes;
 
@@ -4558,10 +4601,10 @@ arc_adjust(void)
 	 * size back to arc_p, if we're still above the target cache
 	 * size, we evict the rest from the MFU.
 	 */
-	target = arc_size - arc_c;
+	target = asize - arc_c;
 
 	if (arc_adjust_type(arc_mfu) == ARC_BUFC_METADATA &&
-	    arc_meta_used > arc_meta_min) {
+	    ameta > arc_meta_min) {
 		bytes = arc_adjust_impl(arc_mfu, 0, target, ARC_BUFC_METADATA);
 		total_evicted += bytes;
 
@@ -4662,13 +4705,14 @@ arc_flush(spa_t *spa, boolean_t retry)
 void
 arc_shrink(int64_t to_free)
 {
+	uint64_t asize = aggsum_value(&arc_size);
 	uint64_t c = arc_c;
 
 	if (c > to_free && c - to_free > arc_c_min) {
 		arc_c = c - to_free;
 		atomic_add_64(&arc_p, -(arc_p >> arc_shrink_shift));
-		if (arc_c > arc_size)
-			arc_c = MAX(arc_size, arc_c_min);
+		if (asize < arc_c)
+			arc_c = MAX(asize, arc_c_min);
 		if (arc_p > arc_c)
 			arc_p = (arc_c >> 1);
 		ASSERT(arc_c >= arc_c_min);
@@ -4677,7 +4721,7 @@ arc_shrink(int64_t to_free)
 		arc_c = arc_c_min;
 	}
 
-	if (arc_size > arc_c)
+	if (asize > arc_c)
 		(void) arc_adjust();
 }
 
@@ -4894,7 +4938,8 @@ arc_kmem_reap_now(void)
 	extern kmem_cache_t	*range_seg_cache;
 
 #ifdef _KERNEL
-	if ((arc_meta_used >= arc_meta_limit) && zfs_arc_meta_prune) {
+	if (aggsum_compare(&arc_meta_used, arc_meta_limit) >= 0 &&
+	    zfs_arc_meta_prune) {
 		/*
 		 * We are exceeding our meta-data cache limit.
 		 * Prune some entries to release holds on meta-data.
@@ -5039,7 +5084,7 @@ arc_reclaim_thread(void *unused)
 		 * be helpful and could potentially cause us to enter an
 		 * infinite loop.
 		 */
-		if (arc_size <= arc_c || evicted == 0) {
+		if (aggsum_compare(&arc_size, arc_c) <= 0|| evicted == 0) {
 			/*
 			 * We're either no longer overflowing, or we
 			 * can't evict anything more, so we should wake
@@ -5278,7 +5323,8 @@ arc_adapt(int bytes, arc_state_t *state)
 	 * cache size, increment the target cache size
 	 */
 	ASSERT3U(arc_c, >=, 2ULL << SPA_MAXBLOCKSHIFT);
-	if (arc_size >= arc_c - (2ULL << SPA_MAXBLOCKSHIFT)) {
+	if (aggsum_compare(&arc_size, arc_c - (2ULL << SPA_MAXBLOCKSHIFT)) >
+	    0) {
 		atomic_add_64(&arc_c, (int64_t)bytes);
 		if (arc_c > arc_c_max)
 			arc_c = arc_c_max;
@@ -5301,7 +5347,16 @@ arc_is_overflowing(void)
 	uint64_t overflow = MAX(SPA_MAXBLOCKSIZE,
 	    arc_c >> zfs_arc_overflow_shift);
 
-	return (arc_size >= arc_c + overflow);
+	/*
+	 * We just compare the lower bound here for performance reasons. Our
+	 * primary goals are to make sure that the arc never grows without
+	 * bound, and that it can reach its maximum size. This check
+	 * accomplishes both goals. The maximum amount we could run over by is
+	 * 2 * aggsum_borrow_multiplier * NUM_CPUS * the average size of a block
+	 * in the ARC. In practice, that's in the tens of MB, which is low
+	 * enough to be safe.
+	 */
+	return (aggsum_lower_bound(&arc_size) >= arc_c + overflow);
 }
 
 static abd_t *
@@ -5416,7 +5471,8 @@ arc_get_data_impl(arc_buf_hdr_t *hdr, uint64_t size, void *tag)
 		 * If we are growing the cache, and we are adding anonymous
 		 * data, and we have outgrown arc_p, update arc_p
 		 */
-		if (arc_size < arc_c && hdr->b_l1hdr.b_state == arc_anon &&
+		if (aggsum_compare(&arc_size, arc_c) < 0 &&
+		    hdr->b_l1hdr.b_state == arc_anon &&
 		    (refcount_count(&arc_anon->arcs_size) +
 		    refcount_count(&arc_mru->arcs_size) > arc_p))
 			arc_p = MIN(arc_c, arc_p + size);
@@ -7229,6 +7285,13 @@ arc_kstat_update(kstat_t *ksp, int rw)
 		    arc_free_memory();
 		as->arcstat_memory_available_bytes.value.i64 =
 		    arc_available_memory();
+		ARCSTAT(arcstat_size) = aggsum_value(&arc_size);
+		ARCSTAT(arcstat_meta_used) = aggsum_value(&arc_meta_used);
+		ARCSTAT(arcstat_data_size) = aggsum_value(&astat_data_size);
+		ARCSTAT(arcstat_metadata_size) =
+		    aggsum_value(&astat_metadata_size);
+		ARCSTAT(arcstat_hdr_size) = aggsum_value(&astat_hdr_size);
+		ARCSTAT(arcstat_l2_hdr_size) = aggsum_value(&astat_l2_hdr_size);
 	}
 
 	return (0);
@@ -7434,6 +7497,14 @@ arc_state_init(void)
 	refcount_create(&arc_mfu_ghost->arcs_size);
 	refcount_create(&arc_l2c_only->arcs_size);
 
+	aggsum_init(&arc_meta_used, 0);
+	aggsum_init(&arc_size, 0);
+	aggsum_init(&astat_data_size, 0);
+	aggsum_init(&astat_metadata_size, 0);
+	aggsum_init(&astat_hdr_size, 0);
+	aggsum_init(&astat_other_size, 0);
+	aggsum_init(&astat_l2_hdr_size, 0);
+
 	arc_anon->arcs_state = ARC_STATE_ANON;
 	arc_mru->arcs_state = ARC_STATE_MRU;
 	arc_mru_ghost->arcs_state = ARC_STATE_MRU_GHOST;
@@ -7526,7 +7597,6 @@ arc_init(void)
 
 	arc_c = arc_c_max;
 	arc_p = (arc_c >> 1);
-	arc_size = 0;
 
 	/* Set min to 1/2 of arc_c_min */
 	arc_meta_min = 1ULL << SPA_MAXBLOCKSHIFT;

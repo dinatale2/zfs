@@ -1,0 +1,3 @@
+EXTRA_DIST = \
+	THIRDPARTYLICENSE.cityhash \
+	THIRDPARTYLICENSE.cityhash.descrip
