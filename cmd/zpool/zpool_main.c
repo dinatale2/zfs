@@ -2209,34 +2209,29 @@ do_import(nvlist_t *config, const char *newname, const char *mntopts,
 		(void) fprintf(stderr, gettext("cannot import '%s': pool "
 		    "is formatted using an unsupported ZFS version\n"), name);
 		return (1);
-	} else if (state != POOL_STATE_EXPORTED &&
+	} else if (zfs_forceimport_required(config) && 
 	    !(flags & ZFS_IMPORT_ANY_HOST)) {
 		uint64_t hostid = 0;
-		unsigned long system_hostid = get_system_hostid();
+		char *hostname;
+		uint64_t timestamp;
+		time_t t;
 
 		(void) nvlist_lookup_uint64(config, ZPOOL_CONFIG_HOSTID,
 		    &hostid);
-
-		if (hostid != 0 && (unsigned long)hostid != system_hostid) {
-			char *hostname;
-			uint64_t timestamp;
-			time_t t;
-
-			verify(nvlist_lookup_string(config,
-			    ZPOOL_CONFIG_HOSTNAME, &hostname) == 0);
-			verify(nvlist_lookup_uint64(config,
-			    ZPOOL_CONFIG_TIMESTAMP, &timestamp) == 0);
-			t = timestamp;
-			(void) fprintf(stderr, gettext("cannot import "
-			    "'%s': pool may be in use from other "
-			    "system, it was last accessed by %s "
-			    "(hostid: 0x%lx) on %s"), name, hostname,
-			    (unsigned long)hostid,
-			    asctime(localtime(&t)));
-			(void) fprintf(stderr, gettext("use '-f' to "
-			    "import anyway\n"));
-			return (1);
-		}
+		verify(nvlist_lookup_string(config,
+		    ZPOOL_CONFIG_HOSTNAME, &hostname) == 0);
+		verify(nvlist_lookup_uint64(config,
+		    ZPOOL_CONFIG_TIMESTAMP, &timestamp) == 0);
+		t = timestamp;
+		(void) fprintf(stderr, gettext("cannot import "
+		    "'%s': pool may be in use from other "
+		    "system, it was last accessed by %s "
+		    "(hostid: 0x%lx) on %s"), name, hostname,
+		    (unsigned long)hostid,
+		    asctime(localtime(&t)));
+		(void) fprintf(stderr, gettext("use '-f' to "
+		    "import anyway\n"));
+		return (1);
 	}
 
 	if (zpool_import_props(g_zfs, config, newname, props, flags) != 0)

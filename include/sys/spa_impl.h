@@ -272,6 +272,7 @@ struct spa {
 	spa_stats_t	spa_stats;		/* assorted spa statistics */
 	hrtime_t	spa_ccw_fail_time;	/* Conf cache write fail time */
 	taskq_t		*spa_zvol_taskq;	/* Taskq for minor management */
+	int		spa_open_flags;		/* control spa_open behavior */
 
 	/*
 	 * spa_refcount & spa_config_lock must be the last elements

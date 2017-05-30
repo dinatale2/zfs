@@ -162,6 +162,7 @@ typedef struct ztest_shared_opts {
 	uint64_t zo_passtime;
 	uint64_t zo_killrate;
 	int zo_verbose;
+	int zo_kernel_pools;
 	int zo_init;
 	uint64_t zo_time;
 	uint64_t zo_maxloops;
@@ -184,6 +185,7 @@ static const ztest_shared_opts_t ztest_opts_defaults = {
 	.zo_passtime = 60,		/* 60 seconds */
 	.zo_killrate = 70,		/* 70% kill rate */
 	.zo_verbose = 0,
+	.zo_kernel_pools = 0,
 	.zo_init = 1,
 	.zo_time = 300,			/* 5 minutes */
 	.zo_maxloops = 50,		/* max loops during spa_freeze() */
@@ -624,6 +626,7 @@ usage(boolean_t requested)
 	    "\t[-p pool_name (default: %s)]\n"
 	    "\t[-f dir (default: %s)] file directory for vdev files\n"
 	    "\t[-V] verbose (use multiple times for ever more blather)\n"
+	    "\t[-K] kernel-valid pools only (e.g. no file-type log devices)\n"
 	    "\t[-E] use existing pool instead of creating new one\n"
 	    "\t[-T time (default: %llu sec)] total run time\n"
 	    "\t[-F freezeloops (default: %llu)] max loops in spa_freeze()\n"
@@ -666,7 +669,7 @@ process_options(int argc, char **argv)
 	bcopy(&ztest_opts_defaults, zo, sizeof (*zo));
 
 	while ((opt = getopt(argc, argv,
-	    "v:s:a:m:r:R:d:t:g:i:k:p:f:VET:P:hF:B:o:")) != EOF) {
+	    "v:s:a:m:r:R:d:t:g:i:k:p:f:VKET:P:hF:B:o:")) != EOF) {
 		value = 0;
 		switch (opt) {
 		case 'v':
@@ -738,6 +741,9 @@ process_options(int argc, char **argv)
 			break;
 		case 'V':
 			zo->zo_verbose++;
+			break;
+		case 'K':
+			zo->zo_kernel_pools = 1;
 			break;
 		case 'E':
 			zo->zo_init = 0;
@@ -2852,7 +2858,8 @@ ztest_vdev_aux_add_remove(ztest_ds_t *zd, uint64_t id)
 
 	path = umem_alloc(MAXPATHLEN, UMEM_NOFAIL);
 
-	if (ztest_random(2) == 0) {
+	/* The kernel does not accept files for l2arc cache devices */
+	if ((ztest_random(2) == 0) || (ztest_opts.zo_kernel_pools)) {
 		sav = &spa->spa_spares;
 		aux = ZPOOL_CONFIG_SPARES;
 	} else {
@@ -2863,6 +2870,10 @@ ztest_vdev_aux_add_remove(ztest_ds_t *zd, uint64_t id)
 	mutex_enter(&ztest_vdev_lock);
 
 	spa_config_enter(spa, SCL_VDEV, FTAG, RW_READER);
+
+	if (ztest_opts.zo_verbose >= 5) {
+		(void) printf("add/remove log devices (type %s) \n", aux);
+	}
 
 	if (sav->sav_count != 0 && ztest_random(4) == 0) {
 		/*
@@ -5962,8 +5973,9 @@ ztest_spa_import_export(char *oldname, char *newname)
 
 	/*
 	 * Try to import it.
+	 * sometimes set ZFS_IMPORT_TXG_ONLY, otherwise no flag set.
 	 */
-	newconfig = spa_tryimport(config);
+	(void) spa_tryimport(config, &newconfig);
 	ASSERT(newconfig != NULL);
 	nvlist_free(newconfig);
 

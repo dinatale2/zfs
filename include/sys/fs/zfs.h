@@ -516,6 +516,13 @@ typedef enum {
 #define	ZPL_VERSION_USERSPACE		ZPL_VERSION_4
 #define	ZPL_VERSION_SA			ZPL_VERSION_5
 
+typedef struct zpool_rewind_policy {
+	uint32_t	zrp_request;	/* rewind behavior requested */
+	uint64_t	zrp_maxmeta;	/* max acceptable meta-data errors */
+	uint64_t	zrp_maxdata;	/* max acceptable data errors */
+	uint64_t	zrp_txg;	/* specific txg to load */
+} zpool_rewind_policy_t;
+
 /* Rewind request information */
 #define	ZPOOL_NO_REWIND		1  /* No policy - default behavior */
 #define	ZPOOL_NEVER_REWIND	2  /* Do not search for best txg or rewind */
@@ -524,13 +531,8 @@ typedef enum {
 #define	ZPOOL_EXTREME_REWIND	16 /* Allow extreme measures to find best txg */
 #define	ZPOOL_REWIND_MASK	28 /* All the possible rewind bits */
 #define	ZPOOL_REWIND_POLICIES	31 /* All the possible policy bits */
-
-typedef struct zpool_rewind_policy {
-	uint32_t	zrp_request;	/* rewind behavior requested */
-	uint64_t	zrp_maxmeta;	/* max acceptable meta-data errors */
-	uint64_t	zrp_maxdata;	/* max acceptable data errors */
-	uint64_t	zrp_txg;	/* specific txg to load */
-} zpool_rewind_policy_t;
+/* Other open flags */
+#define	ZPOOL_NO_ACT_CHK	64 /* Skip activity check */
 
 /*
  * The following are configuration names used in the nvlist describing a pool's
@@ -629,6 +631,7 @@ typedef struct zpool_rewind_policy {
 #define	ZPOOL_CONFIG_COMMENT		"comment"
 #define	ZPOOL_CONFIG_SUSPENDED		"suspended"	/* not stored on disk */
 #define	ZPOOL_CONFIG_TIMESTAMP		"timestamp"	/* not stored on disk */
+#define	ZPOOL_CONFIG_IMPORT_TXG		"import_txg"	/* not stored on disk */
 #define	ZPOOL_CONFIG_BOOTFS		"bootfs"	/* not stored on disk */
 #define	ZPOOL_CONFIG_MISSING_DEVICES	"missing_vdevs"	/* not stored on disk */
 #define	ZPOOL_CONFIG_LOAD_INFO		"load_info"	/* not stored on disk */
@@ -1104,6 +1107,7 @@ typedef enum {
 #define	ZFS_IMPORT_MISSING_LOG	0x4
 #define	ZFS_IMPORT_ONLY		0x8
 #define	ZFS_IMPORT_TEMP_NAME	0x10
+#define	ZFS_IMPORT_TXG_ONLY	0x20
 
 /*
  * Sysevent payload members.  ZFS will generate the following sysevents with the

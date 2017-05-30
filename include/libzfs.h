@@ -740,6 +740,7 @@ extern int zfs_append_partition(char *path, size_t max_len);
 extern int zfs_resolve_shortname(const char *name, char *path, size_t pathlen);
 extern int zfs_strcmp_pathname(char *name, char *cmp_name, int wholedisk);
 extern int zfs_path_order(char *path, int *order);
+extern boolean_t zfs_forceimport_required(nvlist_t *config);
 
 /*
  * Mount support functions.

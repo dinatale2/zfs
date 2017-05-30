@@ -1,0 +1,27 @@
+# Below all works together well with commit
+* 43670d9 (b_poor_mans_mmp_kernel) Add debug code for vdev_uberblock_load
+
+# Set the hostid to some nonzero value so that pools appear "foreign"
+echo 963 | sudo tee /sys/module/spl/parameters/spl_hostid 1b6c24a (b_poor_mans_mmp_kernel) Add debug code for vdev_uberblock_load
+
+# This runs a single thread which does nothing but snapshots,
+# and the count is close to the number of populated uberblock
+# slots when the ring is not yet full (within about 2).
+ZFS_HOSTID=16 sudo -E cmd/ztest/ztest -f /mnt/tmp/ -VVVVV -t1 -k0 2>&1 | tee /tmp/t1
+
+# Perform a tryimport, which will look for uberblocks
+sudo cmd/zpool/zpool import -d /mnt/tmp
+
+# This counts the populated uberblock slots
+watch -n 1 'for x in $(seq 0 32); do file=/mnt/tmp/ztest.${x}a; if [ -f "$file" ]; then echo -n "$file: "; sudo cmd/zdb/zdb -lu $file | grep Uberblock | grep -c -v -e 127; fi; done'
+
+# vdev_uberblock_load() records the number of valid uberblocks it finds on
+# each leaf vdev, then calls vdev_uberblock_count_print() to print it out
+# to the console.  This is (total_found/4) to adjust for the fact that there
+# are 4 labels.  Because of MMP this may be slightly wrong, as MMP writes to
+# only one randomly chosen label, and so there might be more uberblocks in
+# one label than another, and each label might have a unique MMP block.
+watch --differences -n 1 'dmesg | tail -n 30'
+# produces lines like
+vdev 11362755435938796261 ub_count 35
+vdev 18108439891321018841 ub_count 35

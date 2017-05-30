@@ -53,6 +53,7 @@
 #include <sys/vdev_disk.h>
 #include <sys/metaslab.h>
 #include <sys/metaslab_impl.h>
+#include <sys/mmp.h>
 #include <sys/uberblock_impl.h>
 #include <sys/txg.h>
 #include <sys/avl.h>
@@ -1339,6 +1340,9 @@ spa_unload(spa_t *spa)
 		spa_config_exit(spa, SCL_ALL, FTAG);
 	}
 
+	if (spa->spa_dsl_pool && spa->spa_dsl_pool->dp_mmp.mmp_thread)
+		mmp_thread_stop(spa->spa_dsl_pool);
+
 	/*
 	 * Wait for any outstanding async I/O to complete.
 	 */
@@ -2316,6 +2320,178 @@ vdev_count_verify_zaps(vdev_t *vd)
 }
 #endif
 
+static unsigned long
+spa_get_hostid(void)
+{
+	unsigned long myhostid;
+
+#ifdef	_KERNEL
+	myhostid = zone_get_hostid(NULL);
+#else	/* _KERNEL */
+	/*
+	 * We're emulating the system's hostid in userland, so
+	 * we can't use zone_get_hostid().
+	 */
+	(void) ddi_strtoul(hw_serial, NULL, 10, &myhostid);
+#endif	/* _KERNEL */
+
+	return (myhostid);
+}
+
+/*
+ * Determine whether the activity check is required.
+ */
+static boolean_t
+spa_activity_check_reqd(nvlist_t *config, uberblock_t *ub, spa_t *spa)
+{
+	uint64_t config_pool_state = 0;
+	uint64_t hostid = 0, myhostid = 0;
+	uint64_t orig_txg = 0;
+	uint64_t orig_timestamp = 0;
+
+	(void) nvlist_lookup_uint64(config, ZPOOL_CONFIG_IMPORT_TXG,
+	    &orig_txg);
+	(void) nvlist_lookup_uint64(config, ZPOOL_CONFIG_TIMESTAMP,
+	    &orig_timestamp);
+	dprintf("mmp spa_activity_check_reqd orig_txg %llu "
+	    "orig_timestamp %llu\n", (u_longlong_t)orig_txg,
+	    (u_longlong_t)orig_timestamp);
+
+	(void) nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_STATE,
+	    &config_pool_state);
+	(void) nvlist_lookup_uint64(config, ZPOOL_CONFIG_HOSTID, &hostid);
+	myhostid = spa_get_hostid();
+
+	dprintf("mmp spa_load_impl pool_state %llu hostid %llu myhostid %llu\n",
+	    config_pool_state,
+	    (u_longlong_t)hostid,
+	    (u_longlong_t)myhostid);
+
+	/*
+	 * Special value to indicate test should be skipped, for zdb
+	 */
+	if (orig_txg == MMP_SKIP_ACTIVITY_TEST)
+		return B_FALSE;
+
+	if (spa->spa_open_flags & ZPOOL_NO_ACT_CHK)
+		return B_FALSE;
+
+	/*
+	 * Since the hostid is likely to be different before the pivot than
+	 * it is after the pivot, and since it is hard to see how two nodes
+	 * could safely boot from the same pool anyway, we do not do MMP
+	 * for root pools.
+	 */
+	if (spa_is_root(spa))
+		return B_FALSE;
+
+	/*
+	 * Skip the test if the current host, and the host who last imported the
+	 * pool, both have (or had) MMP disabled.  If the pool is successfully
+	 * imported, we will then respect the local setting for mmp writes.
+	 */
+	if (ub->ub_mmp_magic == MMP_MAGIC && ub->ub_mmp_delay == 0 &&
+	    zfs_mmp_interval == 0)
+		return (B_FALSE);
+	/*
+	 * If the orig_* values are nonzero, they are the results of an earlier
+	 * tryimport.  If they match the uberblock we just found, then the pool
+	 * has not changed and we return false so we do not test a second time.
+	 */
+	if (orig_txg && orig_timestamp && orig_txg == ub->ub_txg &&
+	    orig_timestamp == ub->ub_timestamp)
+		return (B_FALSE);
+
+	if (hostid == myhostid)
+		return (B_FALSE);
+
+	if (config_pool_state != POOL_STATE_ACTIVE)
+		return (B_FALSE);
+
+	return (B_TRUE);
+}
+
+static int
+spa_activity_check(uberblock_t *ub, spa_t *spa)
+{
+	kcondvar_t mycv;
+	kmutex_t mymtx;
+	hrtime_t duration_factor = 4 * zfs_mmp_fail_intervals;
+	hrtime_t activity_test_duration = duration_factor * zfs_mmp_interval;
+	uint64_t orig_txg = 0;
+	uint64_t orig_timestamp = 0;
+	vdev_t *rvd = spa->spa_root_vdev;
+	int error = 0;
+	nvlist_t *label;
+
+	cv_init(&mycv, NULL, CV_DEFAULT, NULL);
+	mutex_init(&mymtx, NULL, MUTEX_DEFAULT, NULL);
+	mutex_enter(&mymtx);
+
+	orig_txg = ub->ub_txg;
+	orig_timestamp = ub->ub_timestamp;
+	if (ub->ub_mmp_magic == MMP_MAGIC && ub->ub_mmp_delay) {
+		/*
+		 * ub_mmp_delay * vdev_count_leaves() == zfs_mmp_interval
+		 * on the node that last had pool imported.
+		 */
+		activity_test_duration = duration_factor * ub->ub_mmp_delay *
+		    vdev_count_leaves(spa);
+	}
+
+	/* Randomize in case of simultaneous imports */
+	activity_test_duration += spa_get_random(3) *
+	    activity_test_duration / 10;
+
+	activity_test_duration += gethrtime();
+	for (int i = 0; gethrtime() < activity_test_duration ; i++) {
+		if (i > 0) {
+			if (cv_timedwait_sig_hires(&mycv, &mymtx, NANOSEC,
+			    NANOSEC, 0) == 0) {
+				error = EINTR;
+				break;
+			}
+		}
+
+#ifdef _KERNEL
+		printk(
+#else
+		fprintf(stderr,
+#endif
+		    "activity check cycle %d\n", i);
+
+		vdev_uberblock_load(rvd, ub, &label);
+
+		if (orig_txg != ub->ub_txg ||
+		    orig_timestamp != ub->ub_timestamp) {
+			error = EBUSY;
+			break;
+		}
+	}
+
+	mutex_exit(&mymtx);
+	cv_destroy(&mycv);
+
+	/*
+	 * If user canceled import or we detected activity, fail.
+	 */
+
+	if (error == EINTR) {
+		return (SET_ERROR(EINTR));
+	}
+
+	if (error == EBUSY) {
+		cmn_err(CE_WARN, "pool '%s' could not be "
+		    "loaded as it is current active on another"
+		    "system (host: %s hostid: 0x%lx). See: "
+		    "http://zfsonlinux.org/msg/ZFS-8000-EY",
+		    spa_name(spa), "some_hostname", (unsigned long)12121212);
+		return (SET_ERROR(EBUSY));
+	}
+
+	return (0);
+}
+
 /*
  * Load an existing storage pool, using the pool's builtin spa_config as a
  * source of configuration information.
@@ -2423,7 +2599,20 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	/*
 	 * Find the best uberblock.
 	 */
+
 	vdev_uberblock_load(rvd, ub, &label);
+
+	/*
+	 * If the pool might be in use on another node, check for changes
+	 * in the uberblocks on disk.
+	 */
+	if (spa_activity_check_reqd(config, ub, spa))
+		error = spa_activity_check(ub, spa);
+	else
+		dprintf("mmp spa_load_impl skipped activity_test\n");
+
+	if (error)
+		return (error);
 
 	/*
 	 * If we weren't able to find a single valid uberblock, return failure.
@@ -2660,15 +2849,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 			VERIFY(nvlist_lookup_string(nvconfig,
 			    ZPOOL_CONFIG_HOSTNAME, &hostname) == 0);
 
-#ifdef	_KERNEL
-			myhostid = zone_get_hostid(NULL);
-#else	/* _KERNEL */
-			/*
-			 * We're emulating the system's hostid in userland, so
-			 * we can't use zone_get_hostid().
-			 */
-			(void) ddi_strtoul(hw_serial, NULL, 10, &myhostid);
-#endif	/* _KERNEL */
+			myhostid = spa_get_hostid();
 			if (hostid != 0 && myhostid != 0 &&
 			    hostid != myhostid) {
 				nvlist_free(nvconfig);
@@ -2973,6 +3154,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		spa_set_log_state(spa, SPA_LOG_GOOD);
 		spa->spa_sync_on = B_TRUE;
 		txg_sync_start(spa->spa_dsl_pool);
+		mmp_thread_start(spa->spa_dsl_pool);
 
 		/*
 		 * Wait for all claims to sync.  We sync up to the highest
@@ -3060,7 +3242,7 @@ spa_load_retry(spa_t *spa, spa_load_state_t state, int mosconfig)
  */
 static int
 spa_load_best(spa_t *spa, spa_load_state_t state, int mosconfig,
-    uint64_t max_request, int rewind_flags)
+    uint64_t max_request, int open_flags)
 {
 	nvlist_t *loadinfo = NULL;
 	nvlist_t *config = NULL;
@@ -3088,7 +3270,7 @@ spa_load_best(spa_t *spa, spa_load_state_t state, int mosconfig,
 	spa->spa_last_ubsync_txg = spa->spa_uberblock.ub_txg;
 	spa->spa_last_ubsync_txg_ts = spa->spa_uberblock.ub_timestamp;
 
-	if (rewind_flags & ZPOOL_NEVER_REWIND) {
+	if (open_flags & ZPOOL_NEVER_REWIND) {
 		nvlist_free(config);
 		return (load_error);
 	}
@@ -3108,7 +3290,7 @@ spa_load_best(spa_t *spa, spa_load_state_t state, int mosconfig,
 
 	spa->spa_load_max_txg = spa->spa_last_ubsync_txg;
 	safe_rewind_txg = spa->spa_last_ubsync_txg - TXG_DEFER_SIZE;
-	min_txg = (rewind_flags & ZPOOL_EXTREME_REWIND) ?
+	min_txg = (open_flags & ZPOOL_EXTREME_REWIND) ?
 	    TXG_INITIAL : safe_rewind_txg;
 
 	/*
@@ -3160,7 +3342,7 @@ spa_load_best(spa_t *spa, spa_load_state_t state, int mosconfig,
  */
 static int
 spa_open_common(const char *pool, spa_t **spapp, void *tag, nvlist_t *nvpolicy,
-    nvlist_t **config)
+    nvlist_t **config, int flags)
 {
 	spa_t *spa;
 	spa_load_state_t state = SPA_LOAD_OPEN;
@@ -3276,15 +3458,15 @@ spa_open_common(const char *pool, spa_t **spapp, void *tag, nvlist_t *nvpolicy,
 
 int
 spa_open_rewind(const char *name, spa_t **spapp, void *tag, nvlist_t *policy,
-    nvlist_t **config)
+    nvlist_t **config, int flags)
 {
-	return (spa_open_common(name, spapp, tag, policy, config));
+	return (spa_open_common(name, spapp, tag, policy, config, flags));
 }
 
 int
 spa_open(const char *name, spa_t **spapp, void *tag)
 {
-	return (spa_open_common(name, spapp, tag, NULL, NULL));
+	return (spa_open_common(name, spapp, tag, NULL, NULL, 0));
 }
 
 /*
@@ -3513,7 +3695,7 @@ spa_get_stats(const char *name, nvlist_t **config,
 	spa_t *spa;
 
 	*config = NULL;
-	error = spa_open_common(name, &spa, FTAG, NULL, config);
+	error = spa_open_common(name, &spa, FTAG, NULL, config, 0);
 
 	if (spa != NULL) {
 		/*
@@ -3989,6 +4171,7 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 
 	spa->spa_sync_on = B_TRUE;
 	txg_sync_start(spa->spa_dsl_pool);
+	mmp_thread_start(spa->spa_dsl_pool);
 
 	/*
 	 * We explicitly wait for the first transaction to complete so that our
@@ -4197,8 +4380,8 @@ spa_import(char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	return (0);
 }
 
-nvlist_t *
-spa_tryimport(nvlist_t *tryconfig)
+int
+spa_tryimport(nvlist_t *tryconfig, nvlist_t **newconfig)
 {
 	nvlist_t *config = NULL;
 	char *poolname;
@@ -4206,11 +4389,13 @@ spa_tryimport(nvlist_t *tryconfig)
 	uint64_t state;
 	int error;
 
+	config = NULL;
+
 	if (nvlist_lookup_string(tryconfig, ZPOOL_CONFIG_POOL_NAME, &poolname))
-		return (NULL);
+		return (SET_ERROR(EINVAL));
 
 	if (nvlist_lookup_uint64(tryconfig, ZPOOL_CONFIG_POOL_STATE, &state))
-		return (NULL);
+		return (SET_ERROR(EINVAL));
 
 	/*
 	 * Create and initialize the spa structure.
@@ -4221,7 +4406,7 @@ spa_tryimport(nvlist_t *tryconfig)
 
 	/*
 	 * Pass off the heavy lifting to spa_load().
-	 * Pass TRUE for mosconfig because the user-supplied config
+	 * Pass TRUE for mosconfig because the user-supplied tryconfig
 	 * is actually the one to trust when doing an import.
 	 */
 	error = spa_load(spa, SPA_LOAD_TRYIMPORT, SPA_IMPORT_EXISTING, B_TRUE);
@@ -4235,6 +4420,8 @@ spa_tryimport(nvlist_t *tryconfig)
 		    poolname) == 0);
 		VERIFY(nvlist_add_uint64(config, ZPOOL_CONFIG_POOL_STATE,
 		    state) == 0);
+		VERIFY(nvlist_add_uint64(config, ZPOOL_CONFIG_IMPORT_TXG,
+		    spa->spa_uberblock.ub_txg) == 0);
 		VERIFY(nvlist_add_uint64(config, ZPOOL_CONFIG_TIMESTAMP,
 		    spa->spa_uberblock.ub_timestamp) == 0);
 		VERIFY(nvlist_add_nvlist(config, ZPOOL_CONFIG_LOAD_INFO,
@@ -4274,6 +4461,10 @@ spa_tryimport(nvlist_t *tryconfig)
 				kmem_free(dsname, MAXPATHLEN);
 			}
 			kmem_free(tmpname, MAXPATHLEN);
+
+			/*
+			 * Should we now clear error if it is set to EEXIST?
+			 */
 		}
 
 		/*
@@ -4285,12 +4476,14 @@ spa_tryimport(nvlist_t *tryconfig)
 		spa_config_exit(spa, SCL_CONFIG, FTAG);
 	}
 
+	*newconfig = config;
+
 	spa_unload(spa);
 	spa_deactivate(spa);
 	spa_remove(spa);
 	mutex_exit(&spa_namespace_lock);
 
-	return (config);
+	return (error);
 }
 
 /*
@@ -6720,6 +6913,13 @@ spa_sync(spa_t *spa, uint64_t txg)
 	}
 	dmu_tx_commit(tx);
 
+#ifdef _KERNEL
+	printk(
+#else
+	printf(
+#endif
+	"spa_sync vdev_config_sync/dmu_tx_commit num %u\n",
+	    (unsigned)(txg - spa->spa_first_txg));
 	taskq_cancel_id(system_delay_taskq, spa->spa_deadman_tqid);
 	spa->spa_deadman_tqid = 0;
 

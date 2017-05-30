@@ -208,6 +208,40 @@ vdev_label_write(zio_t *zio, vdev_t *vd, int l, abd_t *buf, uint64_t offset,
 	    ZIO_PRIORITY_SYNC_WRITE, flags, B_TRUE));
 }
 
+void
+vdev_mmp_read(zio_t *zio, vdev_t *vd, int l, int n, abd_t *buf,
+    zio_done_func_t *done, void *private, int flags)
+{
+	uint64_t offset;
+	uint64_t size = VDEV_UBERBLOCK_SIZE(vd);
+
+	ASSERT(l >= 0);
+	ASSERT(l < VDEV_LABELS);
+	ASSERT(n >= 0);
+	ASSERT(n < MMP_BLOCKS_PER_LABEL);
+
+	offset = VDEV_UBERBLOCK_OFFSET(vd, VDEV_FIRST_MMP_BLOCK(vd) + n);
+
+	vdev_label_read(zio, vd, l, buf, offset, size, done, private, flags);
+}
+
+void
+vdev_mmp_write(zio_t *zio, vdev_t *vd, int l, int n, abd_t *buf,
+    zio_done_func_t *done, void *private, int flags)
+{
+	uint64_t offset;
+	uint64_t size = VDEV_UBERBLOCK_SIZE(vd);
+
+	ASSERT(l >= 0);
+	ASSERT(l < VDEV_LABELS);
+	ASSERT(n >= 0);
+	ASSERT(n < MMP_BLOCKS_PER_LABEL);
+
+	offset = VDEV_UBERBLOCK_OFFSET(vd, VDEV_FIRST_MMP_BLOCK(vd) + n);
+
+	vdev_label_write(zio, vd, l, buf, offset, size, done, private, flags);
+}
+
 /*
  * Generate the nvlist representing this vdev's stats
  */
@@ -1061,6 +1095,14 @@ vdev_uberblock_load_done(zio_t *zio)
 
 	if (zio->io_error == 0 && uberblock_verify(ub) == 0) {
 		mutex_enter(&rio->io_lock);
+
+		dprintf("vdev_uberblock_load_done best_txg %llu txg %llu "
+		    "best_timestamp %llu timestamp %llu\n",
+		    (u_longlong_t)cbp->ubl_ubbest->ub_txg,
+		    (u_longlong_t)ub->ub_txg,
+		    (u_longlong_t)cbp->ubl_ubbest->ub_timestamp,
+		    (u_longlong_t)ub->ub_timestamp);
+
 		if (ub->ub_txg <= spa->spa_load_max_txg &&
 		    vdev_uberblock_compare(ub, cbp->ubl_ubbest) > 0) {
 			/*
@@ -1088,8 +1130,13 @@ vdev_uberblock_load_impl(zio_t *zio, vdev_t *vd, int flags,
 		vdev_uberblock_load_impl(zio, vd->vdev_child[c], flags, cbp);
 
 	if (vd->vdev_ops->vdev_op_leaf && vdev_readable(vd)) {
+		/*
+		 * If the pool was last imported by a non-MMP aware ZFS,
+		 * the "MMP BLOCKS" may contain valid uberblocks.
+		 */
+		int slots = VDEV_UBERBLOCK_COUNT(vd) + MMP_BLOCKS_PER_LABEL;
 		for (l = 0; l < VDEV_LABELS; l++) {
-			for (n = 0; n < VDEV_UBERBLOCK_COUNT(vd); n++) {
+			for (n = 0; n < slots; n++) {
 				vdev_label_read(zio, vd, l,
 				    abd_alloc_linear(VDEV_UBERBLOCK_SIZE(vd),
 				    B_TRUE), VDEV_UBERBLOCK_OFFSET(vd, n),
@@ -1232,7 +1279,7 @@ vdev_uberblock_sync(zio_t *zio, uberblock_t *ub, vdev_t *vd, int flags)
 		vd->vdev_copy_uberblocks = B_FALSE;
 	}
 
-	n = ub->ub_txg & (VDEV_UBERBLOCK_COUNT(vd) - 1);
+	n = VDEV_UBERBLOCK_SLOT(vd, ub->ub_txg);
 
 	/* Copy the uberblock_t into the ABD */
 	ub_abd = abd_alloc_for_io(VDEV_UBERBLOCK_SIZE(vd), B_TRUE);
@@ -1449,8 +1496,9 @@ retry:
 	 * then there's nothing to do.
 	 */
 	if (ub->ub_txg < txg &&
-	    uberblock_update(ub, spa->spa_root_vdev, txg) == B_FALSE &&
-	    list_is_empty(&spa->spa_config_dirty_list))
+	    uberblock_update(ub, spa->spa_root_vdev, txg,
+	    spa->spa_dsl_pool->dp_mmp.mmp_delay) ==
+	        B_FALSE && list_is_empty(&spa->spa_config_dirty_list))
 		return (0);
 
 	if (txg > spa_freeze_txg(spa))

@@ -2161,6 +2161,11 @@ dump_uberblock(uberblock_t *ub, const char *header, const char *footer)
 	(void) printf("\tguid_sum = %llu\n", (u_longlong_t)ub->ub_guid_sum);
 	(void) printf("\ttimestamp = %llu UTC = %s",
 	    (u_longlong_t)ub->ub_timestamp, asctime(localtime(&timestamp)));
+
+	(void) printf("\tmmp_magic = %016llx\n", (u_longlong_t)ub->ub_mmp_magic);
+	if (ub->ub_mmp_magic == MMP_MAGIC)
+		(void) printf("\tmmp_delay = %0llu\n", (u_longlong_t)ub->ub_mmp_delay);
+
 	if (dump_opt['u'] >= 4) {
 		char blkbuf[BP_SPRINTF_LEN];
 		snprintf_blkptr(blkbuf, sizeof (blkbuf), &ub->ub_rootbp);
@@ -2505,11 +2510,13 @@ dump_label_uberblocks(label_t *label, uint64_t ashift, int label_num)
 
 	vdev_t vd;
 	char header[ZDB_MAX_UB_HEADER_SIZE];
+	int slots;
 
 	vd.vdev_ashift = ashift;
 	vd.vdev_top = &vd;
+	slots = VDEV_UBERBLOCK_COUNT(&vd) + MMP_BLOCKS_PER_LABEL;
 
-	for (int i = 0; i < VDEV_UBERBLOCK_COUNT(&vd); i++) {
+	for (int i = 0; i < slots; i++) {
 		uint64_t uoff = VDEV_UBERBLOCK_OFFSET(&vd, i);
 		uberblock_t *ub = (void *)((char *)&label->label + uoff);
 		cksum_record_t *rec = label->uberblocks[i];
@@ -2711,6 +2718,7 @@ dump_label(const char *dev)
 		cksum_record_t *rec;
 		zio_cksum_t cksum;
 		vdev_t vd;
+		int slots;
 
 		if (pread64(fd, &label->label, sizeof (label->label),
 		    vdev_label_offset(psize, l, 0)) != sizeof (label->label)) {
@@ -2748,8 +2756,9 @@ dump_label(const char *dev)
 
 		vd.vdev_ashift = ashift;
 		vd.vdev_top = &vd;
+		slots = VDEV_UBERBLOCK_COUNT(&vd) + MMP_BLOCKS_PER_LABEL;
 
-		for (int i = 0; i < VDEV_UBERBLOCK_COUNT(&vd); i++) {
+		for (int i = 0; i < slots; i++) {
 			uint64_t uoff = VDEV_UBERBLOCK_OFFSET(&vd, i);
 			uberblock_t *ub = (void *)((char *)label + uoff);
 
@@ -4381,14 +4390,23 @@ main(int argc, char **argv)
 
 		error = ENOENT;
 		if (name) {
-			if (dump_opt['C'] > 1) {
-				(void) printf("\nConfiguration for import:\n");
-				dump_nvlist(cfg, 8);
-			}
 			if (nvlist_add_nvlist(cfg,
 			    ZPOOL_REWIND_POLICY, policy) != 0) {
 				fatal("can't open '%s': %s",
 				    target, strerror(ENOMEM));
+			}
+			/*
+			 * The activity test would protect zdb from crashing
+			 * if the pool configuration is changing, but this
+			 * is not normally the case.  The test will prevent
+			 * zdb from importing an open pool, which is a common
+			 * use case.  So we skip it.
+			 */
+			fnvlist_add_uint64(cfg, ZPOOL_CONFIG_POOL_TXG, 
+			    MMP_SKIP_ACTIVITY_TEST);
+			if (dump_opt['C'] > 1) {
+				(void) printf("\nConfiguration for import:\n");
+				dump_nvlist(cfg, 8);
 			}
 			error = spa_import(name, cfg, NULL, flags);
 		}
@@ -4406,7 +4424,7 @@ main(int argc, char **argv)
 	if (error == 0) {
 		if (target_is_spa || dump_opt['R']) {
 			error = spa_open_rewind(target, &spa, FTAG, policy,
-			    NULL);
+			    NULL, ZPOOL_NO_ACT_CHK);
 			if (error) {
 				/*
 				 * If we're missing the log device then
@@ -4423,7 +4441,7 @@ main(int argc, char **argv)
 
 				if (!error) {
 					error = spa_open_rewind(target, &spa,
-					    FTAG, policy, NULL);
+					    FTAG, policy, NULL, ZPOOL_NO_ACT_CHK);
 				}
 			}
 		} else {

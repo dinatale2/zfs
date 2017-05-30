@@ -19,32 +19,43 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
- * Use is subject to license terms.
- */
-/*
- * Copyright (c) 2014 by Delphix. All rights reserved.
+ * Copyright (C) 2017 by Lawrence Livermore National Security, LLC.
  */
 
-#ifndef _SYS_UBERBLOCK_H
-#define	_SYS_UBERBLOCK_H
+#ifndef _SYS_MMP_H
+#define	_SYS_MMP_H
 
 #include <sys/spa.h>
-#include <sys/vdev.h>
-#include <sys/zio.h>
+#include <sys/zfs_context.h>
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
-typedef struct uberblock uberblock_t;
+#define MMP_SKIP_ACTIVITY_TEST 1
 
-extern int uberblock_verify(uberblock_t *);
-extern boolean_t uberblock_update(uberblock_t *ub, vdev_t *rvd, uint64_t txg,
-    uint64_t mmp_delay);
+typedef struct mmp_thread_state {
+	kmutex_t	mmp_thread_lock;	/* protect thread mgmt fields */
+	kcondvar_t	mmp_thread_cv;
+	kthread_t	*mmp_thread;
+	uint8_t		mmp_thread_exiting;
+	kmutex_t	mmp_io_lock;		/* protect below */
+	hrtime_t	mmp_last_write;		/* last successful MMP write */
+	uint64_t	mmp_delay;		/* Recent period MMP writes */
+} mmp_thread_state_t;
+
+
+extern void mmp_init(struct dsl_pool *dp);
+extern void mmp_fini(struct dsl_pool *dp);
+extern void mmp_thread_start(struct dsl_pool *dp);
+extern void mmp_thread_stop(struct dsl_pool *dp);
+
+/* Global tuning */
+extern uint zfs_mmp_interval;
+extern uint zfs_mmp_fail_intervals;
 
 #ifdef	__cplusplus
 }
 #endif
 
-#endif	/* _SYS_UBERBLOCK_H */
+#endif	/* _SYS_MMP_H */

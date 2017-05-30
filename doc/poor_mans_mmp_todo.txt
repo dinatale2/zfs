@@ -1,0 +1,72 @@
+TODO for poor man's mmp
+
+Major outstanding issues or questions
+
+Whether to use the ZIO pipeline for MMP writes, or reintroduce
+vdev_disk_physio() which exists in Illumos but was dropped in the port
+because there was no consumer.  It would get to bio_submit() and friends
+much more directly.  Brian has an idea of how much work would be
+involved, but thinks it's doable; for example would need to do one's own
+checksum generation.
+
+Whether to reimplement entirely in the zfs kernel module.  Need to write
+up the advantages and disadvantages of this.  Among others, would allow
+it to be upstreamed.
+
+Whether we can safely use MMP without the mmp write interval being
+stored in the uberblock where the importing node can see it to determine
+how long to wait.  Currently we require the nodes to use compatible
+write interval/delay settings.
+
+Whether to implement a fuller version, after this simple version is
+landed.
+
+
+Minor outstanding issues or questions
+
+Whether changing VDEV_UBERBLOCK_SLOT to use (txg % count) will be too
+expensive on 32-bit systems since txg is uint64_t.  Andreas suggested
+using only the last 32 bits of the txg.  When it does reach 0xffffffff,
+there will be a discontinuity this affects series of uberblocks to fall
+back to - see https://github.com/zfsonlinux/zfs/pull/6073
+
+Whether to make the mmp thread rotate over all the leaves, labels, and
+mmp blocks when writing instead of choosing them randomly.  Potentially
+cheaper, guarantee fair spread, but needs code to rotate and handle
+device attach/detach/add/remove properly.
+
+Handling of 'zpool create -f' needs some examination.  It allows the
+user to add devices to a new pool, even if the devices currently have
+a label and may be in use.  Should either perform an activity check or
+simply remove the flag and require the user to perform labelclear
+and/or destroy the old pool first.
+
+Improvements not implemented yet
+
+Make mmp write frequency (user-supplied-factor)/(# leaf vdevs) Hz,
+where factor is 1 by default.  Scaling the I/O based on number of
+devices is important.
+
+zpool_check_for_activity: start with a small polling interval and increase
+it with each iteration up to a 1-second max.  This will speed up the return
+time on a pool which is active elsewhere.
+
+Improving handling of long delays on mmp writes, particularly in the
+case of one bad device in a pool with many devices.  Right now the code
+just blocks on zio_wait(), which means the mmp thread will hang on a
+single bad device, when it could continue writing to the other devices.
+
+In zpool_check_for_activity(), make
+  time_to_check = fixed_part + RANDOM(random_part)
+so that simultaneous imports have some chance of detecting each
+other because one finishes first.  This is worthwhile because with
+a tool like pdsh or clustershell, it's easy to invoke the same command
+within a very short time on many nodes or an entire cluster, and so
+a few-second-delay is less likely than a sub-second delay.
+
+Check for change before allowing spa_resume(), when the pool has been suspended
+because of device errors.
+
+Check for unexpected change on-disk periodically while the pool is imported, by
+checking that the most recent txg on-disk matches the last one synced, and the
+hostid matches.

@@ -820,12 +820,31 @@ pool_active(libzfs_handle_t *hdl, const char *name, uint64_t guid,
 	return (0);
 }
 
+boolean_t
+zfs_forceimport_required(nvlist_t *config)
+{
+	uint64_t state;
+	uint64_t hostid = 0;
+	unsigned long system_hostid = get_system_hostid();
+
+	state = fnvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_STATE);
+	(void) nvlist_lookup_uint64(config, ZPOOL_CONFIG_HOSTID,
+	    &hostid);
+
+	if (state != POOL_STATE_EXPORTED && hostid != 0 &&
+	    (unsigned long)hostid != system_hostid)
+		return (B_TRUE);
+
+	return (B_FALSE);
+}
+
 static nvlist_t *
 refresh_config(libzfs_handle_t *hdl, nvlist_t *config)
 {
 	nvlist_t *nvl;
 	zfs_cmd_t zc = {"\0"};
 	int err, dstbuf_size;
+	char *poolname = NULL;
 
 	if (zcmd_write_conf_nvlist(hdl, &zc, config) != 0)
 		return (NULL);
@@ -843,6 +862,13 @@ refresh_config(libzfs_handle_t *hdl, nvlist_t *config)
 			zcmd_free_nvlists(&zc);
 			return (NULL);
 		}
+	}
+
+	if (errno == EBUSY) {
+		(void) nvlist_lookup_string(config, ZPOOL_CONFIG_POOL_NAME,
+		    &poolname);
+		fprintf(stderr, "Activity detected in pool %s: unable to "
+		    "import.\n", poolname);
 	}
 
 	if (err) {
@@ -1215,6 +1241,11 @@ get_configs(libzfs_handle_t *hdl, pool_list_t *pl, boolean_t active_ok)
 			nvlist_free(config);
 			config = NULL;
 			continue;
+		}
+
+		if (zfs_forceimport_required(config) == B_TRUE) {
+			printf("checking for activity in pool..\n");
+			(void) fflush(stdout);
 		}
 
 		if ((nvl = refresh_config(hdl, config)) == NULL) {

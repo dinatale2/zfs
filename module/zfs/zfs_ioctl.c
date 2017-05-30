@@ -1649,19 +1649,19 @@ zfs_ioc_pool_stats(zfs_cmd_t *zc)
 static int
 zfs_ioc_pool_tryimport(zfs_cmd_t *zc)
 {
-	nvlist_t *tryconfig, *config;
+	nvlist_t *tryconfig, *config = NULL;
 	int error;
 
 	if ((error = get_nvlist(zc->zc_nvlist_conf, zc->zc_nvlist_conf_size,
 	    zc->zc_iflags, &tryconfig)) != 0)
 		return (error);
 
-	config = spa_tryimport(tryconfig);
+	error = spa_tryimport(tryconfig, &config);
 
 	nvlist_free(tryconfig);
 
-	if (config == NULL)
-		return (SET_ERROR(EINVAL));
+	if (error || !config)
+		return (error);
 
 	error = put_nvlist(zc, config);
 	nvlist_free(config);
@@ -4891,7 +4891,7 @@ zfs_ioc_clear(zfs_cmd_t *zc)
 		if ((error = get_nvlist(zc->zc_nvlist_src,
 		    zc->zc_nvlist_src_size, zc->zc_iflags, &policy)) == 0) {
 			error = spa_open_rewind(zc->zc_name, &spa, FTAG,
-			    policy, &config);
+			    policy, &config, 0);
 			if (config != NULL) {
 				int err;
 
