@@ -24,7 +24,13 @@
  * Use is subject to license terms.
  */
 
+#include <sys/nvpair.h>
+
 #ifndef _SYS_SYSEVENT_H
 #define	_SYS_SYSEVENT_H
+
+typedef struct sysevent {
+	nvlist_t *resource;
+} sysevent_t;
 
 #endif

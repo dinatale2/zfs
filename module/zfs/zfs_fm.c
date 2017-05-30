@@ -904,19 +904,26 @@ zfs_ereport_post_checksum(spa_t *spa, vdev_t *vd,
 #endif
 }
 
-static void
-zfs_post_common(spa_t *spa, vdev_t *vd, const char *type, const char *name,
-    nvlist_t *aux)
+/*
+ * The 'sysevent.fs.zfs.*' events are signals posted to notify user space of
+ * change in the pool.  All sysevents are listed in sys/sysevent/eventdefs.h
+ * and are designed to be consumed by the ZFS Event Daemon (ZED).  For
+ * additional details refer to the zed(8) man page.
+ */
+sysevent_t *
+zfs_create_sysevent_impl(spa_t *spa, vdev_t *vd, const char *type,
+    const char *name, nvlist_t *aux)
 {
+	sysevent_t *ev = NULL;
 #ifdef _KERNEL
 	nvlist_t *resource;
 	char class[64];
 
 	if (spa_load_state(spa) == SPA_LOAD_TRYIMPORT)
-		return;
+		return NULL;
 
 	if ((resource = fm_nvlist_create(NULL)) == NULL)
-		return;
+		return NULL;
 
 	(void) snprintf(class, sizeof (class), "%s.%s.%s", type,
 	    ZFS_ERROR_CLASS, name);
@@ -958,8 +965,38 @@ zfs_post_common(spa_t *spa, vdev_t *vd, const char *type, const char *name,
 		}
 	}
 
-	zfs_zevent_post(resource, NULL, zfs_zevent_post_cb);
+	ev = kmem_alloc(sizeof (sysevent_t), KM_SLEEP);
+	ev->resource = resource;
 #endif
+	return ev;
+}
+
+sysevent_t *
+zfs_create_sysevent(spa_t *spa, vdev_t *vd, const char *name, nvlist_t *aux)
+{
+	return (zfs_create_sysevent_impl(spa, vd, FM_SYSEVENT_CLASS, name,
+	    aux));
+}
+
+void
+zfs_post_sysevent(sysevent_t *ev)
+{
+#ifdef _KERNEL
+	/* check for NULL because zfs_create_sysevent can return NULL */
+	if (!ev)
+		return;
+
+	zfs_zevent_post(ev->resource, NULL, zfs_zevent_post_cb);
+	kmem_free(ev, sizeof (*ev));
+#endif
+}
+
+static void
+zfs_post_common(spa_t *spa, vdev_t *vd, const char *type, const char *name,
+    nvlist_t *aux)
+{
+	sysevent_t *ev = zfs_create_sysevent_impl(spa, vd, type, name, aux);
+	zfs_post_sysevent(ev);
 }
 
 /*
@@ -1025,23 +1062,12 @@ zfs_post_state_change(spa_t *spa, vdev_t *vd, uint64_t laststate)
 #endif
 }
 
-/*
- * The 'sysevent.fs.zfs.*' events are signals posted to notify user space of
- * change in the pool.  All sysevents are listed in sys/sysevent/eventdefs.h
- * and are designed to be consumed by the ZFS Event Daemon (ZED).  For
- * additional details refer to the zed(8) man page.
- */
-void
-zfs_post_sysevent(spa_t *spa, vdev_t *vd, const char *name)
-{
-	zfs_post_common(spa, vd, FM_SYSEVENT_CLASS, name, NULL);
-}
-
 #if defined(_KERNEL) && defined(HAVE_SPL)
 EXPORT_SYMBOL(zfs_ereport_post);
 EXPORT_SYMBOL(zfs_ereport_post_checksum);
 EXPORT_SYMBOL(zfs_post_remove);
 EXPORT_SYMBOL(zfs_post_autoreplace);
 EXPORT_SYMBOL(zfs_post_state_change);
+EXPORT_SYMBOL(zfs_create_sysevent);
 EXPORT_SYMBOL(zfs_post_sysevent);
 #endif /* _KERNEL */
