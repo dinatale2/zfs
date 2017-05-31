@@ -1,0 +1,65 @@
+Poor Man's Multiple Mount Protection Test Cases
+
+Variables to Consider
+* Host ID
+* Activity Present
+* VDEV state
+* zpool import -f
+* Tunable zfs_mmp_interval
+
+Notes abut zfs_mmp_interval
+* zfs_mmp_interval is measured in milliseconds. The write frequency is
+  number of leaf vdevs / zfs_mmp_interval.
+* Setting zfs_mmp_interval to 0, will disable mmp. No mmp uberblock updates
+  should occur and no activity checking on zpool import.
+
+Test Cases
+* (done) Create a pool with single VDEV, monitor VDEV's labels for changes
+  to the uberblocks.
+* Create a pool with single VDEV, monitor VDEV's labels for changes
+  to the uberblocks. Destroy the pool, verify that the MMP update thread stops.
+* Create a pool with single VDEV, monitor VDEV's labels for changes
+  to the uberblocks. Export the pool, verify that the MMP update thread stops.
+* Import a pool with single VDEV, monitor VDEV's labels for changes
+  to the uberblocks. Destroy the pool, verify that the MMP update thread stops.
+* Import a pool with single VDEV, monitor VDEV's labels for changes
+  to the uberblocks. Export the pool, verify that the MMP update thread stops.
+* (done) Run ztest to simulate an actively used pool, repeatedly attempt to import
+  the pool with -f from outside ztest. The active pool should never be
+  imported.
+* (done) Run ztest to simulate an actively used pool, repeatedly attempt to import
+  the pool without -f from outside ztest. The active pool should never be
+  imported.
+* (done) create a pool, run zpool export -F, this should result in VDEVs
+  which have a state of ONLINE, but no activity. Attempting a zpool import
+  without -f should result in a delayed failure.
+* (done) create a pool, run zpool export -F, this should result in VDEVs
+  which have a state of ONLINE, but no activity. Attempting a zpool import
+  with -f should result in a delayed success.
+* Create a pool, destroy the pool, change hostid, then attempt to import without -f.
+  This should fail without delay.
+* Create a pool, destroy the pool, change hostid, then attempt to import with -f.
+  This should fail without delay.
+* Create a pool, destroy the pool, change hostid, then attempt to import -D
+  without -f. This should succeed without delay.
+* Create a pool, destroy the pool, change hostid, then attempt to import -D with -f
+  should succeed without delay.
+* Create a pool, export the pool, then attempt to import without -f. This
+  should succeed without delay.
+* Create a pool, export the pool, then attempt to import with -f. This
+  should succeed without delay.
+* Create a pool then export and ensure the state of the vdevs is ONLINE.
+  Set zfs_mmp_interval to 0 and change the host ID. Running a zpool import -f
+  should succeed without delay.
+* (done) Set zfs_mmp_interval to 0, set zfs_txg_timeout to a high value, create pool,
+  sync pool, ensure uberblocks don't change.
+* (done) Ensure that setting zfs_mmp_interval to a negative value does not succeed.
+* Ensure that setting zfs_mmp_interval over its maximum does not succeed.
+* Set zfs_mmp_interval to a non-default value. Create a single vdev pool
+  and ensure that the vdev's uberblocks are updated at least once per interval.
+
+Open Questions
+* Using ztest, is it possible to simulate a failover situation where the
+  VDEVs have a recorded state of ONLINE for the zpool.
+* When a VDEV is part of a destroyed pool, is it necessary for zpool import to
+  check for activity?

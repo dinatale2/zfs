@@ -577,3 +577,9 @@ tests = ['zvol_swap_001_pos', 'zvol_swap_002_pos', 'zvol_swap_003_pos',
 
 [tests/functional/libzfs]
 tests = ['many_fds']
+
+[tests/functional/mmp]
+tests = ['mmp_online_active_import', 'mmp_online_inactive_import',
+         'mmp_thread_basic', 'mmp_interval_0', 'mmp_interval_negative']
+pre =
+post =
