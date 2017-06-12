@@ -3384,8 +3384,14 @@ spa_open_common(const char *pool, spa_t **spapp, void *tag, nvlist_t *nvpolicy,
 		if (state != SPA_LOAD_RECOVER)
 			spa->spa_last_ubsync_txg = spa->spa_load_txg = 0;
 
+		if (flags && ZPOOL_NO_ACT_CHK)
+			spa->spa_open_flags |= ZPOOL_NO_ACT_CHK;
+
 		error = spa_load_best(spa, state, B_FALSE, policy.zrp_txg,
 		    policy.zrp_request);
+
+		if (flags && ZPOOL_NO_ACT_CHK)
+			spa->spa_open_flags &= ~ZPOOL_NO_ACT_CHK;
 
 		if (error == EBADF) {
 			/*
