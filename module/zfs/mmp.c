@@ -33,7 +33,7 @@
 
 static void mmp_thread(dsl_pool_t *dp);
 
-uint zfs_mmp_interval = 1000;		/* time between mmp writes in ms */
+uint zfs_mmp_interval = MMP_DEFAULT_INTERVAL;	/* mmp write interval in ms */
 uint zfs_mmp_fail_intervals = 5;	/* safety factor for MMP writes */
 
 void
@@ -245,9 +245,11 @@ mmp_thread(dsl_pool_t *dp)
 			goto cleanup_and_exit;
 
 		start = gethrtime();
-		next_time = start + MSEC2NSEC(zfs_mmp_interval) /
-		    vdev_count_leaves(dp->dp_spa);
-
+		if (zfs_mmp_interval)
+			next_time = start + MSEC2NSEC(zfs_mmp_interval) /
+			    vdev_count_leaves(dp->dp_spa);
+		else
+			next_time = start + MSEC2NSEC(MMP_DEFAULT_INTERVAL);
 		/*
 		 * When MMP goes off => on, no writes occurred
 		 * recently.  We update mmp_last_write to give

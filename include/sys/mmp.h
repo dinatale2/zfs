@@ -33,6 +33,7 @@ extern "C" {
 #endif
 
 #define MMP_SKIP_ACTIVITY_TEST 1
+#define MMP_DEFAULT_INTERVAL 1000
 
 typedef struct mmp_thread_state {
 	kmutex_t	mmp_thread_lock;	/* protect thread mgmt fields */
