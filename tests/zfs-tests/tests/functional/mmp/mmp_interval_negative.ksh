@@ -34,7 +34,6 @@
 . $STF_SUITE/include/libtest.shlib
 
 verify_runnable "both"
-TXG_TIMEOUT=
 
 function cleanup
 {

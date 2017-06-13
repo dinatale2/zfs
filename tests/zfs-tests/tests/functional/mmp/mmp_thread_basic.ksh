@@ -31,60 +31,40 @@
 #	2. Set zfs_txg_timeout to large value
 #	3. Create a zpool
 #	4. Force a sync on the zpool
-#	5. Store the current "best" uberblock
-#	6. Repeatedly check that the "best" uberblock
-#	   for 10 seconds
-#	7. If the uberblock never changed, fail
+#	5. Find the current "best" uberblock
+#	6. Sleep for enough time for a potential uberblock update
+#	7. Find the current "best" uberblock
+#	8. If the uberblock never changed, fail
 #
 
 . $STF_SUITE/include/libtest.shlib
 
 verify_runnable "both"
-TXG_TIMEOUT=
+
+PREV_UBER="$TEST_BASE_DIR/mmp-uber-prev.txt"
+CURR_UBER="$TEST_BASE_DIR/mmp-uber-curr.txt"
 
 function cleanup
 {
 	set_tunable64 zfs_txg_timeout 5
-
-	if poolexists mmptestpool; then
-		log_must zpool destroy mmptestpool
-	fi
-
-	log_must rm -rf "$TEST_BASE_DIR/mmp_vdevs"
+	default_cleanup
 	log_must rm -f $PREV_UBER $CURR_UBER
 }
 
 log_assert "mmp thread writes uberblocks (MMP)"
 log_onexit cleanup
 
-log_must mkdir "$TEST_BASE_DIR/mmp_vdevs"
-log_must truncate -s 512M "$TEST_BASE_DIR/mmp_vdevs/vdev1"
-
 if ! set_tunable64 zfs_txg_timeout 1000; then
 	log_fail "Failed to set zfs_txg_timeout to 1000"
 fi
 
-log_must zpool create mmptestpool "$TEST_BASE_DIR/mmp_vdevs/vdev1"
-sync_pool mmptestpool
+default_setup $DISKS
+sync_pool $TESTPOOL
 
-PREV_UBER="$TEST_BASE_DIR/mmp-uber-prev.txt"
-CURR_UBER="$TEST_BASE_DIR/mmp-uber-curr.txt"
-
-log_must zdb -u mmptestpool > $PREV_UBER
-
-SECONDS=0
-UBER_CHANGED=0
-while (( $SECONDS < 10 )); do
-	log_must zdb -u mmptestpool > $CURR_UBER
-	if diff "$CURR_UBER" "$PREV_UBER" &> /dev/null; then
-		UBER_CHANGED=1
-		break
-	fi
-
-	cp -f $PREV_UBER $CURR_UBER
-done
-
-if [ "$UBER_CHANGED" -eq 0 ]; then
+log_must zdb -u $TESTPOOL > $PREV_UBER
+log_must sleep 5
+log_must zdb -u $TESTPOOL > $CURR_UBER
+if diff "$CURR_UBER" "$PREV_UBER"; then
 	log_fail "mmp failed to update uberblocks"
 fi
 

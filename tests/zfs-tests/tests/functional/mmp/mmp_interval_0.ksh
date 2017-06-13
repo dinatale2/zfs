@@ -25,43 +25,42 @@
 #
 
 # DESCRIPTION:
+#	When zfs_mmp_interval is set to 0, ensure that leaf vdev
+#	uberblocks are not updated.
 #
 # STRATEGY:
 #	1. Set zfs_mmp_interval to 0 (disables mmp)
 #	2. Set zfs_txg_timeout to large value
 #	3. Create a zpool
 #	4. Force a sync on the zpool
-#	5. Store the current "best" uberblock
-#	6. Repeatedly check that the "best"
-#	   uberblock doesn't change using zdb
-#	7. Set zfs_mmp_interval to 500
-#	8. Repeatedly check that the "best"
-#	   uberblock begins to change using zdb
+#	5. Find the current "best" uberblock
+#	6. Sleep for enough time for uberblocks to change
+#	7. Find the current "best" uberblock
+#	8. If the uberblock changed, fail
+#	9. Set zfs_mmp_interval to 100
+#	10. Sleep for enough time for uberblocks to change
+#	11. Find the current "best" uberblock
+#	12. If uberblocks didn't change, fail
 #
 
 . $STF_SUITE/include/libtest.shlib
 
 verify_runnable "both"
-TXG_TIMEOUT=
+
+PREV_UBER="$TEST_BASE_DIR/mmp-uber-prev.txt"
+CURR_UBER="$TEST_BASE_DIR/mmp-uber-curr.txt"
 
 function cleanup
 {
 	set_tunable64 zfs_mmp_interval 1000
 	set_tunable64 zfs_txg_timeout 5
 
-	if poolexists mmptestpool; then
-		log_must zpool destroy mmptestpool
-	fi
-
-	log_must rm -rf "$TEST_BASE_DIR/mmp_vdevs"
+	default_cleanup
 	log_must rm -f $PREV_UBER $CURR_UBER
 }
 
 log_assert "mmp thread won't write uberblocks with zfs_mmp_interval=0"
 log_onexit cleanup
-
-log_must mkdir "$TEST_BASE_DIR/mmp_vdevs"
-log_must truncate -s 512M "$TEST_BASE_DIR/mmp_vdevs/vdev1"
 
 if ! set_tunable64 zfs_mmp_interval 0; then
 	log_fail "Failed to set zfs_mmp_interval to 0"
@@ -71,47 +70,23 @@ if ! set_tunable64 zfs_txg_timeout 1000; then
 	log_fail "Failed to set zfs_txg_timeout to 1000"
 fi
 
-log_must zpool create mmptestpool "$TEST_BASE_DIR/mmp_vdevs/vdev1"
-sync_pool mmptestpool
+default_setup $DISKS
+sync_pool $TESTPOOL
+log_must zdb -u $TESTPOOL > $PREV_UBER
+log_must sleep 5
+log_must zdb -u $TESTPOOL > $CURR_UBER
 
-PREV_UBER="$TEST_BASE_DIR/mmp-uber-prev.txt"
-CURR_UBER="$TEST_BASE_DIR/mmp-uber-curr.txt"
-
-log_must zdb -u mmptestpool > $PREV_UBER
-
-SECONDS=0
-while (( $SECONDS < 10 )); do
-	log_note time $SECONDS
-	log_must zdb -u mmptestpool > $CURR_UBER
-	log_note head /sys/module/zfs/parameters/zfs_mmp_interval \
-	    /sys/module/zfs/parameters/zfs_txg_timeout
-
-	if ! diff "$CURR_UBER" "$PREV_UBER"; then
-		log_fail "mmp thread has updated an uberblock"
-	fi
-
-	cp -f $PREV_UBER $CURR_UBER
-done
-
-if ! set_tunable64 zfs_mmp_interval 500; then
-	log_fail "Failed to set zfs_mmp_interval to 500"
+if ! diff "$CURR_UBER" "$PREV_UBER"; then
+	log_fail "mmp thread has updated an uberblock"
 fi
 
-sleep 5
+if ! set_tunable64 zfs_mmp_interval 100; then
+	log_fail "Failed to set zfs_mmp_interval to 100"
+fi
 
-SECONDS=0
-UBER_CHANGED=0
-while (( $SECONDS < 10 )); do
-	log_must zdb -u mmptestpool > $CURR_UBER
-	if diff "$CURR_UBER" "$PREV_UBER" &> /dev/null; then
-		UBER_CHANGED=1
-		break
-	fi
-
-	cp -f $PREV_UBER $CURR_UBER
-done
-
-if [ "$UBER_CHANGED" -eq 0 ]; then
+log_must sleep 3
+log_must zdb -u $TESTPOOL > $CURR_UBER
+if diff "$CURR_UBER" "$PREV_UBER"; then
 	log_fail "mmp failed to update uberblocks"
 fi
 

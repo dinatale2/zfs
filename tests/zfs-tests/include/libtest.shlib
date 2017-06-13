@@ -3439,24 +3439,38 @@ function set_tunable32
 	set_tunable_impl "$1" "$2" W
 }
 
+#
+# Set a spl global system tunable
+#
+# $1 tunable name
+# $2 tunable values
+#
+function set_spl_tunable
+{
+	set_tunable_impl "$1" "$2" W "spl"
+}
+
 function set_tunable_impl
 {
 	typeset tunable="$1"
 	typeset value="$2"
 	typeset mdb_cmd="$3"
+	typeset module="$4"
 
 	[[ -z "$tunable" ]] && return 1
 	[[ -z "$value" ]] && return 1
 	[[ -z "$mdb_cmd" ]] && return 1
+	[[ -z "$module" ]] && module="zfs"
 
 	case "$(uname)" in
 	Linux)
-		typeset zfs_tunables="/sys/module/zfs/parameters"
-		[[ -f "$zfs_tunables/$tunable" ]] || return 1
+		typeset zfs_tunables="/sys/module/$module/parameters"
+		[[ -w "$zfs_tunables/$tunable" ]] || return 1
 		echo -n "$value" > "$zfs_tunables/$tunable"
 		return "$?"
 		;;
 	SunOS)
+		[[ "$module" -eq "zfs" ]] || return 1
 		echo "${tunable}/${mdb_cmd}0t${value}" | mdb -kw
 		return "$?"
 		;;

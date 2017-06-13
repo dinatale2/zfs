@@ -25,6 +25,8 @@
 #
 
 # DESCRIPTION:
+#	Ensure that a pool can be forcefully imported from another
+#	host when the pool is inactive.
 #
 # STRATEGY:
 #	1. Set hostid to x
@@ -45,29 +47,29 @@ verify_runnable "both"
 
 function cleanup
 {
-	if poolexists mmptestpool; then
-		log_must zpool destroy mmptestpool
-	fi
-
-	log_must rm -rf "$TEST_BASE_DIR/mmp_vdevs"
+	default_cleanup
+	set_spl_tunable spl_hostid 0
 }
 
 log_assert "zpool import behaves correcly with inactive ONLINE pools"
 log_onexit cleanup
 
-log_must mkdir "$TEST_BASE_DIR/mmp_vdevs"
-log_must truncate -s 512M "$TEST_BASE_DIR/mmp_vdevs/vdev1"
+if ! set_spl_tunable spl_hostid 111 ; then
+	log_fail "Failed to set spl_hostid to 111"
+fi
 
-echo 111 > /sys/module/spl/parameters/spl_hostid
-log_must zpool create mmptestpool "$TEST_BASE_DIR/mmp_vdevs/vdev1"
-log_must zpool export -F mmptestpool
-log_must zpool import -f -d "$TEST_BASE_DIR/mmp_vdevs" mmptestpool
-log_must zpool export -F mmptestpool
-log_must zpool import -d "$TEST_BASE_DIR/mmp_vdevs" mmptestpool
-log_must zpool export -F mmptestpool
+default_setup $DISKS
 
-echo 222 > /sys/module/spl/parameters/spl_hostid
-log_mustnot zpool import -d "$TEST_BASE_DIR/mmp_vdevs" mmptestpool
-log_must zpool import -f -d "$TEST_BASE_DIR/mmp_vdevs" mmptestpool
+log_must zpool export -F $TESTPOOL
+log_must zpool import -f $TESTPOOL
+log_must zpool export -F $TESTPOOL
+log_must zpool import $TESTPOOL
+log_must zpool export -F $TESTPOOL
+
+if ! set_spl_tunable spl_hostid 222 ; then
+	log_fail "Failed to set spl_hostid to 222"
+fi
+log_mustnot zpool import $TESTPOOL
+log_must zpool import -f $TESTPOOL
 
 log_pass "zpool import behaves correcly with inactive ONLINE pools passed"

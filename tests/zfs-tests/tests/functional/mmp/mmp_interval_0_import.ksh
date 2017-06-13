@@ -25,6 +25,8 @@
 #
 
 # DESCRIPTION:
+#	When zfs_mmp_interval is set to 0, there should be no activity
+#	checks when importing a pool on a different host.
 #
 # STRATEGY:
 #	1. Set zfs_mmp_interval to 0 (disables mmp)
@@ -43,38 +45,32 @@ verify_runnable "both"
 function cleanup
 {
 	set_tunable64 zfs_mmp_interval 1000
-
-	if poolexists mmptestpool; then
-		log_must zpool destroy mmptestpool
-	fi
-
-	log_must rm -rf "$TEST_BASE_DIR/mmp_vdevs"
+	default_cleanup
 	log_must rm -f $PREV_UBER $CURR_UBER
+	set_spl_tunable spl_hostid 0
 }
 
 log_assert "zfs_mmp_interval=0 should skip activity checks"
 log_onexit cleanup
 
-log_must mkdir "$TEST_BASE_DIR/mmp_vdevs"
-log_must truncate -s 512M "$TEST_BASE_DIR/mmp_vdevs/vdev1"
+if ! set_spl_tunable spl_hostid 222; then
+	log_fail "Failed to set spl_hostid to 222"
+fi
 
 if ! set_tunable64 zfs_mmp_interval 0; then
 	log_fail "Failed to set zfs_mmp_interval to 0"
 fi
 
-log_note "Setting hostid"
-echo 222 > /sys/module/spl/parameters/spl_hostid
+default_setup $DISKS
+log_must zpool export -F $TESTPOOL
 
-log_must zpool create mmptestpool "$TEST_BASE_DIR/mmp_vdevs/vdev1"
-log_must zpool export -F mmptestpool
-
-log_note "Setting hostid"
-echo 111 > /sys/module/spl/parameters/spl_hostid
+if ! set_spl_tunable spl_hostid 111; then
+	log_fail "Failed to set spl_hostid to 111"
+fi
 SECONDS=0
-log_must zpool import -f -d "$TEST_BASE_DIR/mmp_vdevs" mmptestpool
-IMPORT_DURATION=$SECONDS
+log_must zpool import -f $TESTPOOL
 
-if [ $IMPORT_DURATION -gt 2 ]; then
+if [[ $SECONDS -gt 2 ]]; then
 	log_fail "mmp activity check occured, expected no activity check"
 fi
 

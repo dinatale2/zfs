@@ -25,6 +25,8 @@
 #
 
 # DESCRIPTION:
+#	Under no circumstances when MMP is active, should an active pool
+#	with one hostid be importable by a host with a different hostid.
 #
 # STRATEGY:
 #	1. Run ztest in the background with one hostid.
@@ -50,6 +52,7 @@ function cleanup
 	fi
 
 	log_must rm -rf "$TEST_BASE_DIR/mmp_vdevs"
+	set_spl_tunable spl_hostid 0
 }
 
 log_assert "zpool import fails on active pool (MMP)"
@@ -65,9 +68,11 @@ if ! ps -p $ZTESTPID > /dev/null; then
 	log_fail "ztest failed to start"
 fi
 
-log_note "Setting hostid"
-echo 963 > /sys/module/spl/parameters/spl_hostid
-sleep 5
+if ! set_spl_tunable spl_hostid 963 ; then
+	log_fail "Failed to set spl_hostid to 963"
+fi
+
+log_must sleep 5
 
 for i in {1..10}; do
 	log_mustnot zpool import -f -d "$TEST_BASE_DIR/mmp_vdevs" ztest

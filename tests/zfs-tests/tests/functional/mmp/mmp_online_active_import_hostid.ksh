@@ -25,6 +25,9 @@
 #
 
 # DESCRIPTION:
+#	Importing an active pool when the hostid in the pool is equivalent
+#	to the current host's hostid, even though dangerous, it should
+#	succeed.
 #
 # STRATEGY:
 #	1. Run ztest in the background with hostid x.
@@ -59,6 +62,7 @@ function cleanup
         fi
 
 	log_must rm -rf "$TEST_BASE_DIR/mmp_vdevs"
+	set_spl_tunable spl_hostid 0
 }
 
 log_assert "zpool import succeeds on active pool with same hostid (MMP)"
@@ -74,9 +78,9 @@ if ! ps -p $ZTESTPID > /dev/null; then
 	log_fail "ztest failed to start"
 fi
 
-log_note "Setting hostid"
-echo "$ZFS_HOSTID" > /sys/module/spl/parameters/spl_hostid
-
+if ! set_spl_tunable spl_hostid "$ZFS_HOSTID" ; then
+	log_fail "Failed to set spl_hostid to $ZFS_HOSTID"
+fi
 log_must zpool import -d "$TEST_BASE_DIR/mmp_vdevs" ztest
 
 log_pass "zpool import succeeds on active pool with same hostid (MMP) passed"

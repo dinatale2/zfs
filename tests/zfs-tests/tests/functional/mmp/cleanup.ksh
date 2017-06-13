@@ -24,27 +24,9 @@
 # Copyright (c) 2017 by Lawrence Livermore National Security, LLC.
 #
 
-# DESCRIPTION:
-#	Description goes here.
-#
-# STRATEGY:
-#	1.
-#	2.
-#	3.
-#	4.
-#	5.
-#	6.
-
 . $STF_SUITE/include/libtest.shlib
 
-verify_runnable "both"
+verify_runnable "global"
 
-function cleanup
-{
-}
-
-log_onexit cleanup
-
-log_assert ""
-
-log_pass ""
+default_cleanup
+set_spl_tunable spl_hostid 0
