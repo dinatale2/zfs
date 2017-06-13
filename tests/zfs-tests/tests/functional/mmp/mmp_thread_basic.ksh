@@ -74,7 +74,7 @@ log_must zdb -u mmptestpool > $PREV_UBER
 
 SECONDS=0
 UBER_CHANGED=0
-while (( SECONDS < 10 )); do
+while (( $SECONDS < 10 )); do
 	log_must zdb -u mmptestpool > $CURR_UBER
 	if diff "$CURR_UBER" "$PREV_UBER" &> /dev/null; then
 		UBER_CHANGED=1

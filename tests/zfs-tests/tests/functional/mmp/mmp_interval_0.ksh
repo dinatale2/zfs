@@ -80,9 +80,13 @@ CURR_UBER="$TEST_BASE_DIR/mmp-uber-curr.txt"
 log_must zdb -u mmptestpool > $PREV_UBER
 
 SECONDS=0
-while (( SECONDS < 10 )); do
+while (( $SECONDS < 10 )); do
+	log_note time $SECONDS
 	log_must zdb -u mmptestpool > $CURR_UBER
-	if ! diff "$CURR_UBER" "$PREV_UBER" &> /dev/null; then
+	log_note head /sys/module/zfs/parameters/zfs_mmp_interval \
+	    /sys/module/zfs/parameters/zfs_txg_timeout
+
+	if ! diff "$CURR_UBER" "$PREV_UBER"; then
 		log_fail "mmp thread has updated an uberblock"
 	fi
 
@@ -97,7 +101,7 @@ sleep 5
 
 SECONDS=0
 UBER_CHANGED=0
-while (( SECONDS < 10 )); do
+while (( $SECONDS < 10 )); do
 	log_must zdb -u mmptestpool > $CURR_UBER
 	if diff "$CURR_UBER" "$PREV_UBER" &> /dev/null; then
 		UBER_CHANGED=1
