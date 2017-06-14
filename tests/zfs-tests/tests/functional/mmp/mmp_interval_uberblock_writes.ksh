@@ -49,7 +49,7 @@ DISK=${DISKS%% *}
 function cleanup
 {
 	set_tunable64 zfs_txg_timeout 5
-	default_cleanup
+	default_cleanup_noexit
 	log_must rm -f $PREV_UBER $CURR_UBER
 }
 

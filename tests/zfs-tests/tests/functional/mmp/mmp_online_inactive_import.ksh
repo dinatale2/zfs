@@ -53,7 +53,7 @@ DISK=${DISKS%% *}
 
 function cleanup
 {
-	default_cleanup
+	default_cleanup_noexit
 	set_tunable64 zfs_mmp_interval 1000
 	set_spl_tunable spl_hostid 0
 }
