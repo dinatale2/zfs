@@ -7,4 +7,5 @@ dist_pkgdata_SCRIPTS = \
 	mmp_online_active_import.ksh \
 	mmp_online_inactive_import.ksh \
 	mmp_online_active_import-f_hostid.ksh \
-	mmp_online_active_import_hostid.ksh
+	mmp_online_active_import_hostid.ksh \
+	mmp_interval_uberblock_writes.ksh

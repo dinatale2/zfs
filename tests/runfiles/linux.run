@@ -581,5 +581,5 @@ tests = ['many_fds']
 [tests/functional/mmp]
 tests = ['mmp_online_active_import', 'mmp_online_inactive_import',
     'mmp_thread_basic', 'mmp_interval_0', 'mmp_interval_negative',
-    'mmp_interval_0_import']
+    'mmp_interval_0_import', 'mmp_interval_uberblock_writes']
 pre =
