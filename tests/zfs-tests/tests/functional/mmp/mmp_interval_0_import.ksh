@@ -42,6 +42,8 @@
 
 verify_runnable "both"
 
+DISK=${DISKS%% *}
+
 function cleanup
 {
 	set_tunable64 zfs_mmp_interval 1000
@@ -61,7 +63,7 @@ if ! set_tunable64 zfs_mmp_interval 0; then
 	log_fail "Failed to set zfs_mmp_interval to 0"
 fi
 
-default_setup $DISKS
+default_setup_noexit $DISK
 log_must zpool export -F $TESTPOOL
 
 if ! set_spl_tunable spl_hostid 111; then

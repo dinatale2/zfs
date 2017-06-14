@@ -44,6 +44,7 @@ verify_runnable "both"
 PREV_UBER="$TEST_BASE_DIR/mmp-uber-prev.txt"
 CURR_UBER="$TEST_BASE_DIR/mmp-uber-curr.txt"
 UBER_CHANGES=0
+DISK=${DISKS%% *}
 
 function cleanup
 {
@@ -59,7 +60,7 @@ if ! set_tunable64 zfs_txg_timeout 1000; then
 	log_fail "Failed to set zfs_txg_timeout"
 fi
 
-default_setup $DISKS
+default_setup_noexit $DISK
 sync_pool $TESTPOOL
 
 log_must zdb -u $TESTPOOL > $PREV_UBER

@@ -49,6 +49,7 @@
 . $STF_SUITE/include/libtest.shlib
 
 verify_runnable "both"
+DISK=${DISKS%% *}
 
 function cleanup
 {
@@ -68,7 +69,7 @@ if ! set_tunable64 zfs_mmp_interval 500; then
 	log_fail "Failed to set zfs_mmp_interval"
 fi
 
-default_setup $DISKS
+default_setup_noexit $DISK
 
 log_must zpool export -F $TESTPOOL
 SECONDS=0
