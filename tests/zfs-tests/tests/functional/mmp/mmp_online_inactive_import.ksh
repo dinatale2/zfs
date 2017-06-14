@@ -26,7 +26,8 @@
 
 # DESCRIPTION:
 #	Ensure that a pool can be forcefully imported from another
-#	host when the pool is inactive.
+#	host when the pool is inactive with the expected amount of
+#	delay for activity checks.
 #
 # STRATEGY:
 #	1. Set hostid to x
@@ -40,6 +41,10 @@
 #	9. Run zpool import <pool>, should fail
 #	10. Run zpool import -f <pool>, should succeed
 #
+#NOTES:
+#	Not mentioned in the strategy, but all attempted imports
+#	are timed to determine if an activity check occured.
+#
 
 . $STF_SUITE/include/libtest.shlib
 
@@ -48,6 +53,7 @@ verify_runnable "both"
 function cleanup
 {
 	default_cleanup
+	set_tunable64 zfs_mmp_interval 1000
 	set_spl_tunable spl_hostid 0
 }
 
@@ -58,18 +64,41 @@ if ! set_spl_tunable spl_hostid 111 ; then
 	log_fail "Failed to set spl_hostid to 111"
 fi
 
+if ! set_tunable64 zfs_mmp_interval 500; then
+	log_fail "Failed to set zfs_mmp_interval"
+fi
+
 default_setup $DISKS
 
 log_must zpool export -F $TESTPOOL
+SECONDS=0
 log_must zpool import -f $TESTPOOL
-log_must zpool export -F $TESTPOOL
-log_must zpool import $TESTPOOL
-log_must zpool export -F $TESTPOOL
+if [[ $SECONDS -gt 2 ]]; then
+	log_fail "mmp activity check occured zpool import -f"
+fi
 
+log_must zpool export -F $TESTPOOL
+SECONDS=0
+log_must zpool import $TESTPOOL
+if [[ $SECONDS -gt 2 ]]; then
+	log_fail "mmp activity check occured zpool import"
+fi
+
+log_must zpool export -F $TESTPOOL
 if ! set_spl_tunable spl_hostid 222 ; then
 	log_fail "Failed to set spl_hostid to 222"
 fi
+
+SECONDS=0
 log_mustnot zpool import $TESTPOOL
+if [[ $SECONDS -le 2 ]]; then
+	log_fail "mmp activity check failed to occur zpool import"
+fi
+
+SECONDS=0
 log_must zpool import -f $TESTPOOL
+if [[ $SECONDS -le 2 ]]; then
+	log_fail "mmp activity check failed to occur zpool import -f"
+fi
 
 log_pass "zpool import behaves correcly with inactive ONLINE pools passed"
