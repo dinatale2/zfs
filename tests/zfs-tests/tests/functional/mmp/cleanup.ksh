@@ -28,5 +28,5 @@
 
 verify_runnable "global"
 
-default_cleanup
 set_spl_tunable spl_hostid 0
+default_cleanup

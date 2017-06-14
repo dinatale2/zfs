@@ -92,14 +92,14 @@ fi
 
 SECONDS=0
 log_mustnot zpool import $TESTPOOL
-if [[ $SECONDS -le 2 ]]; then
-	log_fail "mmp activity check failed to occur zpool import"
+if [[ $SECONDS -gt 2 ]]; then
+	log_fail "mmp activity check occured zpool import with different hostid"
 fi
 
 SECONDS=0
 log_must zpool import -f $TESTPOOL
 if [[ $SECONDS -le 2 ]]; then
-	log_fail "mmp activity check failed to occur zpool import -f"
+	log_fail "mmp activity check failed to occur zpool import -f with different hostid"
 fi
 
 log_pass "zpool import behaves correcly with inactive ONLINE pools passed"
