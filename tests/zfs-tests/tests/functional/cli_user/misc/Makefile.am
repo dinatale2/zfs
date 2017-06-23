@@ -6,6 +6,7 @@ dist_pkgdata_SCRIPTS = \
 	zdb_001_neg.ksh \
 	zfs_001_neg.ksh \
 	zfs_allow_001_neg.ksh \
+	zfs_channel_001_neg.ksh \
 	zfs_clone_001_neg.ksh \
 	zfs_create_001_neg.ksh \
 	zfs_destroy_001_neg.ksh \

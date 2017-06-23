@@ -1,3 +1,5 @@
+subdir-m += lua
+
 src = @abs_top_srcdir@/module/zfs
 obj = @abs_builddir@
 
@@ -81,6 +83,11 @@ $(MODULE)-objs += vdev_root.o
 $(MODULE)-objs += zap.o
 $(MODULE)-objs += zap_leaf.o
 $(MODULE)-objs += zap_micro.o
+$(MODULE)-objs += zcp.o
+$(MODULE)-objs += zcp_get.o
+$(MODULE)-objs += zcp_global.o
+$(MODULE)-objs += zcp_iter.o
+$(MODULE)-objs += zcp_synctask.o
 $(MODULE)-objs += zfeature.o
 $(MODULE)-objs += zfeature_common.o
 $(MODULE)-objs += zfs_acl.o

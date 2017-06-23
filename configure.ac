@@ -180,6 +180,9 @@ AC_CONFIG_FILES([
 	tests/zfs-tests/tests/functional/cache/Makefile
 	tests/zfs-tests/tests/functional/cachefile/Makefile
 	tests/zfs-tests/tests/functional/casenorm/Makefile
+	tests/zfs-tests/tests/functional/channel_program/Makefile
+	tests/zfs-tests/tests/functional/channel_program/lua_core/Makefile
+	tests/zfs-tests/tests/functional/channel_program/synctask_core/Makefile
 	tests/zfs-tests/tests/functional/checksum/Makefile
 	tests/zfs-tests/tests/functional/chattr/Makefile
 	tests/zfs-tests/tests/functional/clean_mirror/Makefile

@@ -946,7 +946,6 @@ vpanic(const char *fmt, va_list adx)
 	(void) fprintf(stderr, "error: ");
 	(void) vfprintf(stderr, fmt, adx);
 	(void) fprintf(stderr, "\n");
-
 	abort();	/* think of it as a "user-level crash dump" */
 }
 

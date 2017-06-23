@@ -1,0 +1,39 @@
+subdir-m += lua
+
+src = @abs_top_srcdir@/module/zfs/lua
+obj = @abs_builddir@
+
+MODULE := zfs
+
+EXTRA_CFLAGS = $(ZFS_MODULE_CFLAGS) @KERNELCPPFLAGS@
+
+obj-$(CONFIG_ZFS) := $(MODULE).o
+
+$(MODULE)-objs += lapi.o
+$(MODULE)-objs += lauxlib.o
+$(MODULE)-objs += lbaselib.o
+$(MODULE)-objs += lbitlib.o
+$(MODULE)-objs += lcode.o
+$(MODULE)-objs += lcompat.o
+$(MODULE)-objs += lcorolib.o
+$(MODULE)-objs += lctype.o
+$(MODULE)-objs += ldebug.o
+$(MODULE)-objs += ldo.o
+$(MODULE)-objs += ldump.o
+$(MODULE)-objs += lfunc.o
+$(MODULE)-objs += lgc.o
+$(MODULE)-objs += llex.o
+$(MODULE)-objs += lmem.o
+$(MODULE)-objs += lobject.o
+$(MODULE)-objs += lopcodes.o
+$(MODULE)-objs += lparser.o
+$(MODULE)-objs += lstate.o
+$(MODULE)-objs += lstring.o
+$(MODULE)-objs += lstrlib.o
+$(MODULE)-objs += ltable.o
+$(MODULE)-objs += ltablib.o
+$(MODULE)-objs += ltm.o
+$(MODULE)-objs += lundump.o
+$(MODULE)-objs += lvm.o
+$(MODULE)-objs += lzio.o
+
