@@ -67,18 +67,21 @@ if ! ps -p $ZTESTPID > /dev/null; then
 	log_fail "ztest failed to start"
 fi
 
+unset ZFS_HOSTID
 if ! set_spl_tunable spl_hostid $SPL_HOSTID2 ; then
 	log_fail "Failed to set spl_hostid to $SPL_HOSTID2"
 fi
 
 log_must sleep 5
 
+typeset cmd="zpool import -f -d $TEST_BASE_DIR/mmp_vdevs ztest 2>&1"
 for i in {1..10}; do
-	log_mustnot zpool import -f -d "$TEST_BASE_DIR/mmp_vdevs" ztest
+	log_must eval "$cmd | grep 'Export the pool from the remote system'"
 done
 
+cmd="zpool import -d $TEST_BASE_DIR/mmp_vdevs ztest 2>&1"
 for i in {1..10}; do
-	log_mustnot zpool import -d "$TEST_BASE_DIR/mmp_vdevs" ztest
+	log_must eval "$cmd | grep 'Export the pool on the other system'"
 done
 
 log_pass "zpool import fails on active pool (MMP) passed"

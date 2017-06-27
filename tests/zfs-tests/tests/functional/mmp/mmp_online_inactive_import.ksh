@@ -91,11 +91,14 @@ log_note "SPL hostid is $(get_spl_tunable spl_hostid)"
 
 # Perform a normal import while hostids do not match,
 # should fail with delay to determine activity.
+# Also should expect an message that the pool can
+# be imported.
+typeset cmd="zpool import $TESTPOOL 2>&1"
 SECONDS=0
-log_mustnot zpool import $TESTPOOL
+log_must eval "$cmd | grep 'The pool can be imported'"
 DURATION=$SECONDS
-if [[ $DURATION -lt $ZPOOL_IMPORT_DURATION ]]; then
-	log_fail "unexpected mmp activity check ($DURATION seconds)"
+if [[ $DURATION -le $ZPOOL_IMPORT_DURATION ]]; then
+	log_fail "expected mmp activity check ($DURATION seconds)"
 fi
 
 # Perform a forced import while hostids do not match,
@@ -106,6 +109,5 @@ DURATION=$SECONDS
 if [[ $DURATION -le $ZPOOL_IMPORT_DURATION ]]; then
 	log_fail "expected mmp activity check ($DURATION seconds)"
 fi
-log_must zpool export -F $TESTPOOL
 
 log_pass "zpool import behaves correcly with inactive ONLINE pools passed"
