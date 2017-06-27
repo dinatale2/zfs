@@ -22,3 +22,9 @@
 . $STF_SUITE/tests/functional/mmp/mmp.cfg
 
 verify_runnable "global"
+
+# Turn it off
+MMP_HISTORY=0
+if ! set_tunable64 zfs_mmp_history $MMP_HISTORY; then
+	log_fail "Failed to set zfs_mmp_history to $MMP_HISTORY"
+fi
