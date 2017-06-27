@@ -469,7 +469,7 @@ mmp_thread(spa_t *spa)
 		uint64_t mmp_interval = MSEC2NSEC(zfs_mmp_interval);
 		boolean_t suspended = spa_suspended(spa);
 		hrtime_t start, next_time;
-		hrtime_t max_fail_ns = (MSEC2NSEC(mmp_interval) *
+		hrtime_t max_fail_ns = (mmp_interval *
 		    mmp_fail_intervals);
 
 		if (mmp->mmp_thread_exiting)
@@ -477,7 +477,7 @@ mmp_thread(spa_t *spa)
 
 		start = gethrtime();
 		if (mmp_interval) {
-			next_time = start + MSEC2NSEC(mmp_interval) /
+			next_time = start + mmp_interval /
 			    vdev_count_leaves(spa);
 		} else {
 			next_time = start + MSEC2NSEC(MMP_DEFAULT_INTERVAL);

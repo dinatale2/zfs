@@ -2525,6 +2525,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	uint64_t obj;
 	boolean_t missing_feat_write = B_FALSE;
 	nvlist_t *mos_config;
+	uint64_t tryconfig_txg = 0;
 
 	/*
 	 * If this is an untrusted config, access the pool in read-only mode.
@@ -2614,9 +2615,18 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	vdev_uberblock_load(rvd, ub, &label);
 
 	/*
-	 * If the pool might be in use on another node, check for changes
-	 * in the uberblocks on disk.
+	 * If ZPOOL_CONFIG_IMPORT_TXG is present, an activity check was
+	 * performed during the earlier tryimport.  If the txg recorded there
+	 * is 0, the pool is active on another host.
+	 *
+	 * Otherwise, the pool might be in use on another node.  Check for
+	 * changes in the uberblocks on disk if necessary.
 	 */
+
+	if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_IMPORT_TXG,
+	    &tryconfig_txg) == 0 && tryconfig_txg == 0)
+		return (SET_ERROR(EREMOTEIO));
+
 	if (spa_activity_check_required(spa, ub, config)) {
 		error = spa_activity_check(spa, ub);
 		if (error) {
