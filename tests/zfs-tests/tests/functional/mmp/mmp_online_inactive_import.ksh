@@ -63,23 +63,23 @@ log_note "SPL hostid is $(get_spl_tunable spl_hostid)"
 default_setup_noexit $DISK
 log_must zpool export -F $TESTPOOL
 
-# Perform forced import when pool appears online and hostid matches,
-# should succeed without delay
+# Case 1 - Perform forced import when pool appears online and hostid
+# matches, should succeed without delay
 SECONDS=0
 log_must zpool import -f $TESTPOOL
 DURATION=$SECONDS
 if [[ $DURATION -gt $ZPOOL_IMPORT_DURATION ]]; then
-	log_fail "unexpected mmp activity check ($DURATION seconds)"
+	log_fail "Case 1: unexpected mmp activity check ($DURATION seconds)"
 fi
 log_must zpool export -F $TESTPOOL
 
-# Perform import when pool appears online and hostid matches,
+# Case 2 - Perform import when pool appears online and hostid matches,
 # should succeed without delay
 SECONDS=0
 log_must zpool import $TESTPOOL
 DURATION=$SECONDS
 if [[ $DURATION -gt $ZPOOL_IMPORT_DURATION ]]; then
-	log_fail "unexpected mmp activity check ($DURATION seconds)"
+	log_fail "Case 2: unexpected activity check (${DURATION} seconds)"
 fi
 log_must zpool export -F $TESTPOOL
 
@@ -89,25 +89,24 @@ if ! set_spl_tunable spl_hostid $SPL_HOSTID2 ; then
 fi
 log_note "SPL hostid is $(get_spl_tunable spl_hostid)"
 
-# Perform a normal import while hostids do not match,
-# should fail with delay to determine activity.
-# Also should expect an message that the pool can
-# be imported.
+# Case 3 - Perform a normal import while hostids do not match,
+# should fail with delay to determine activity.  Also should expect
+# an message that the pool can be imported.
 typeset cmd="zpool import $TESTPOOL 2>&1"
 SECONDS=0
 log_must eval "$cmd | grep 'The pool can be imported'"
 DURATION=$SECONDS
 if [[ $DURATION -le $ZPOOL_IMPORT_DURATION ]]; then
-	log_fail "expected mmp activity check ($DURATION seconds)"
+	log_fail "Case 3: expected mmp activity check ($DURATION seconds)"
 fi
 
-# Perform a forced import while hostids do not match,
+# Case 4 - Perform a forced import while hostids do not match,
 # should succeed with delay after determining activity.
 SECONDS=0
 log_must zpool import -f $TESTPOOL
 DURATION=$SECONDS
 if [[ $DURATION -le $ZPOOL_IMPORT_DURATION ]]; then
-	log_fail "expected mmp activity check ($DURATION seconds)"
+	log_fail "Case 4: expected mmp activity check ($DURATION seconds)"
 fi
 
 log_pass "zpool import behaves correcly with inactive ONLINE pools passed"
