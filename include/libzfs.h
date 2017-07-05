@@ -147,6 +147,7 @@ typedef enum zfs_error {
 	EZFS_DIFF,		/* general failure of zfs diff */
 	EZFS_DIFFDATA,		/* bad zfs diff data */
 	EZFS_POOLREADONLY,	/* pool is in read-only mode */
+	EZFS_ACTIVE_POOL,	/* pool is imported on a different system */
 	EZFS_UNKNOWN
 } zfs_error_t;
 
@@ -325,6 +326,8 @@ typedef enum {
 	ZPOOL_STATUS_FAILING_DEV,	/* device experiencing errors */
 	ZPOOL_STATUS_VERSION_NEWER,	/* newer on-disk version */
 	ZPOOL_STATUS_HOSTID_MISMATCH,	/* last accessed by another system */
+	ZPOOL_STATUS_HOSTID_ACTIVE,	/* currently active on another system */
+	ZPOOL_STATUS_HOSTID_REQUIRED,	/* safeimport active w/zero hostid */
 	ZPOOL_STATUS_IO_FAILURE_WAIT,	/* failed I/O, failmode 'wait' */
 	ZPOOL_STATUS_IO_FAILURE_CONTINUE, /* failed I/O, failmode 'continue' */
 	ZPOOL_STATUS_BAD_LOG,		/* cannot read log chain(s) */
@@ -407,6 +410,8 @@ typedef struct importargs {
 } importargs_t;
 
 extern nvlist_t *zpool_search_import(libzfs_handle_t *, importargs_t *);
+extern int zpool_tryimport(libzfs_handle_t *hdl, char *target,
+    nvlist_t **configp, importargs_t *args);
 
 /* legacy pool search routines */
 extern nvlist_t *zpool_find_import(libzfs_handle_t *, int, char **);

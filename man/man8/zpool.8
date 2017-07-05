@@ -716,6 +716,18 @@ The default value is
 .Sy off .
 This property can also be referred to by its shortened name,
 .Sy listsnaps .
+.It Sy safeimport Ns = Ns Sy on Ns | Ns Sy off
+Controls whether a pool activity check should be performed during
+.Nm zpool Cm import .
+When a pool is determined to be active it cannot be imported, even with the
+.Fl f
+option.  This property is intended to be used in failover configurations
+where multiple hosts have access to a pool on shared storage.  In order to
+enable this property each host must set a unique hostid, this can be done
+by creating an
+.Em /etc/hostid
+file.  The default value is
+.Sy off .
 .It Sy version Ns = Ns Ar version
 The current on-disk version of the pool.
 This can be increased, but never decreased.
