@@ -25,6 +25,9 @@ outputdir = /var/tmp/test_results
 [tests/functional/acl/posix]
 tests = ['posix_003_pos']
 
+[tests/functional/arc]
+tests = ['arc_hit']
+
 [tests/functional/atime]
 tests = ['atime_001_pos', 'atime_002_neg', 'atime_003_pos']
 
