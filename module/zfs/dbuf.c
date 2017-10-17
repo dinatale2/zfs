@@ -139,6 +139,8 @@ static kmutex_t dbuf_evict_lock;
 static kcondvar_t dbuf_evict_cv;
 static boolean_t dbuf_evict_thread_exit;
 
+unsigned long dbuf_flush = 0;
+
 /*
  * LRU cache of dbufs. The dbuf cache maintains a list of dbufs that
  * are not currently held but have been recently released. These dbufs
@@ -687,7 +689,26 @@ dbuf_evict_notify(void)
 	}
 }
 
+void
+dbuf_flush_impl(void)
+{
+	unsigned int retries = 0;
+	int64_t prev_size = -1;
+	int64_t size = refcount_count(&dbuf_cache_size);
 
+	while(size > 0 && retries < 10) {
+
+		dbuf_evict_one();
+
+		size = refcount_count(&dbuf_cache_size);
+		if (prev_size != size) {
+			prev_size = size;
+			retries = 0;
+		} else {
+			retries++;
+		}
+	}
+}
 
 void
 dbuf_init(void)
@@ -4077,6 +4098,22 @@ EXPORT_SYMBOL(dmu_buf_set_user_ie);
 EXPORT_SYMBOL(dmu_buf_get_user);
 EXPORT_SYMBOL(dmu_buf_get_blkptr);
 
+#include <linux/mod_compat.h>
+
+static int
+param_set_dbuf_flush(const char *val, zfs_kernel_param_t *kp)
+{
+	int ret;
+
+	ret = param_set_ulong(val, kp);
+	if (ret < 0)
+		return (ret);
+
+	dbuf_flush_impl();
+
+	return (ret);
+}
+
 /* BEGIN CSTYLED */
 module_param(dbuf_cache_max_bytes, ulong, 0644);
 MODULE_PARM_DESC(dbuf_cache_max_bytes,
@@ -4095,5 +4132,10 @@ MODULE_PARM_DESC(dbuf_cache_lowater_pct,
 module_param(dbuf_cache_max_shift, int, 0644);
 MODULE_PARM_DESC(dbuf_cache_max_shift,
 	"Cap the size of the dbuf cache to a log2 fraction of arc size.");
+
+module_param_call(dbuf_flush, param_set_dbuf_flush,
+	param_get_ulong, &dbuf_flush, 0644);
+MODULE_PARM_DESC(dbuf_flush,
+	"Start a flush of the dbuf cache");
 /* END CSTYLED */
 #endif

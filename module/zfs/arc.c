@@ -4619,6 +4619,16 @@ arc_adjust(void)
 	return (total_evicted);
 }
 
+#define ARC_FLUSH_METADATA(fs, guid, list, retry) {			\
+	if(fs->list == B_TRUE && fs->metadata == B_TRUE)		\
+		(void) arc_flush_state(list, guid, ARC_BUFC_METADATA, retry); \
+}
+
+#define ARC_FLUSH_DATA(fs, guid, list, retry) {			\
+	if(fs->list == B_TRUE && fs->data == B_TRUE)		\
+		(void) arc_flush_state(list, guid, ARC_BUFC_DATA, retry); \
+}
+
 static void
 arc_flush_impl(flush_state_t *fs)
 {
