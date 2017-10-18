@@ -29,6 +29,7 @@
 
 function flush_arc
 {
+	log_must set_tunable64 dbuf_flush 1
 	log_must set_tunable64 zfs_arc_flush "all"
 }
 

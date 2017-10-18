@@ -51,6 +51,8 @@
 kstat_t *dbuf_ksp;
 
 typedef struct dbuf_stats {
+	kstat_named_t hits;
+	kstat_named_t misses;
 	kstat_named_t size;
 	kstat_named_t size_max;
 	kstat_named_t max_bytes;
@@ -65,6 +67,8 @@ typedef struct dbuf_stats {
 } dbuf_stats_t;
 
 dbuf_stats_t dbuf_stats = {
+	{ "hits",		KSTAT_DATA_UINT64 },
+	{ "misses",		KSTAT_DATA_UINT64 },
 	{ "size",		KSTAT_DATA_UINT64 },
 	{ "size_max",		KSTAT_DATA_UINT64 },
 	{ "max_bytes",		KSTAT_DATA_UINT64 },

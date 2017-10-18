@@ -19,7 +19,7 @@
 #
 
 # DESCRIPTION:
-#	zfs_multihost_interval should only accept valid values.
+#	Test that a newly created file is properly cached in the ARC.
 #
 # STRATEGY:
 #	1. Flush the ARC
@@ -47,7 +47,10 @@ log_onexit cleanup
 flush_arc
 prev_hits=$(get_arcstat "hits")
 log_must dd bs=1M count=20 < /dev/urandom > "$mntpnt/testfile"
+log_must sync
+sleep 5
 log_must cat $mntpnt/testfile > /dev/null
+sleep 5
 new_hits=$(get_arcstat "hits")
 total_hits=$((new_hits - prev_hits))
 
