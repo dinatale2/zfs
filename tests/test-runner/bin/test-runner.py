@@ -19,10 +19,12 @@
 import ConfigParser
 import os
 import logging
+import random
 from datetime import datetime
 from optparse import OptionParser
 from pwd import getpwnam
 from pwd import getpwuid
+from random import shuffle
 from select import select
 from subprocess import PIPE
 from subprocess import Popen
@@ -461,7 +463,11 @@ class TestGroup(Test):
             cont = pretest.result.result is 'PASS'
             pretest.log(logger, options)
 
-        for fname in self.tests:
+        tests = self.tests 
+        if options.random:
+            shuffle(self.tests)
+
+        for fname in tests:
             test = Cmd(os.path.join(self.pathname, fname),
                        outputdir=os.path.join(self.outputdir, fname),
                        timeout=self.timeout, user=self.user)
@@ -711,9 +717,14 @@ class TestRun(object):
                 self.outputdir)
         iteration = 0
         while iteration < options.iterations:
-            for test in sorted(self.tests.keys()):
+            tests = sorted(self.tests.keys())
+            testgroups = sorted(self.testgroups.keys())
+            if options.random:
+                shuffle(tests)
+                shuffle(testgroups)
+            for test in tests:
                 self.tests[test].run(self.logger, options)
-            for testgroup in sorted(self.testgroups.keys()):
+            for testgroup in testgroups:
                 self.testgroups[testgroup].run(self.logger, options)
             iteration += 1
 
@@ -845,6 +856,9 @@ def parse_args():
     parser.add_option('-i', action='callback', callback=options_cb,
                       default=TESTDIR, dest='testdir', type='string',
                       metavar='testdir', help='Specify a test directory.')
+    parser.add_option('-I', action='callback', callback=options_cb, default=1,
+                      dest='iterations', metavar='iterations', type='int',
+                      help='Number of times to run the test run.')
     parser.add_option('-p', action='callback', callback=options_cb,
                       default='', dest='pre', metavar='script',
                       type='string', help='Specify a pre script.')
@@ -853,9 +867,17 @@ def parse_args():
                       type='string', help='Specify a post script.')
     parser.add_option('-q', action='store_true', default=False, dest='quiet',
                       help='Silence on the console during a test run.')
+    parser.add_option('-r', action='store_true', default=False, dest='random',
+                      help='Randomize order of tests and test groups.')
+    parser.add_option('-s', action='callback', callback=options_cb, default=None,
+                      dest='seed', metavar='seed', type='int',
+                      help='Seed value for randomization.')
     parser.add_option('-t', action='callback', callback=options_cb, default=60,
                       dest='timeout', metavar='seconds', type='int',
                       help='Timeout (in seconds) for an individual test.')
+    parser.add_option('-T', action='callback', callback=options_cb, default='',
+                      dest='tags', metavar='tags', type='string',
+                      help='Specify tags to execute specific test groups.')
     parser.add_option('-u', action='callback', callback=options_cb,
                       default='', dest='user', metavar='user', type='string',
                       help='Specify a different user name to run as.')
@@ -868,12 +890,6 @@ def parse_args():
     parser.add_option('-X', action='callback', callback=options_cb, default='',
                       dest='post_user', metavar='post_user', type='string',
                       help='Specify a user to execute the post script.')
-    parser.add_option('-T', action='callback', callback=options_cb, default='',
-                      dest='tags', metavar='tags', type='string',
-                      help='Specify tags to execute specific test groups.')
-    parser.add_option('-I', action='callback', callback=options_cb, default=1,
-                      dest='iterations', metavar='iterations', type='int',
-                      help='Number of times to run the test run.')
     (options, pathnames) = parser.parse_args()
 
     if not options.runfile and not options.template:
@@ -890,6 +906,7 @@ def parse_args():
 def main():
     options = parse_args()
     testrun = TestRun(options)
+    random.seed(options.seed)
 
     if options.cmd is 'runtests':
         find_tests(testrun, options)
