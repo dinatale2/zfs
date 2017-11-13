@@ -1,4 +1,4 @@
-#! /bin/ksh -p
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -21,22 +21,9 @@
 #
 
 #
-# Copyright (c) 2015 by Lawrence Livermore National Security, LLC.
-# All rights reserved.
+# Copyright (c) 2016, Lawrence Livermore National Security, LLC.
 #
 
 . $STF_SUITE/include/libtest.shlib
 
-set -A args  "" "-b" "-d" "-r" "-v" "-s \",\"" "-x"
-
-log_assert "dbufstat.py generates output and doesn't return an error code"
-
-typeset -i i=0
-while [[ $i -lt ${#args[*]} ]]; do
-        log_must eval "dbufstat.py ${args[i]} > /dev/null"
-        ((i = i + 1))
-done
-
-log_must eval "dbufstat.py -F object=10,dbc=1,pool=testpool > /dev/null"
-
-log_pass "dbufstat.py generates output and doesn't return an error code"
+default_cleanup
