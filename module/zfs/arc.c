@@ -1024,6 +1024,7 @@ static kcondvar_t l2arc_feed_thr_cv;
 static uint8_t l2arc_thread_exit;
 
 static abd_t *arc_get_data_abd(arc_buf_hdr_t *, uint64_t, void *);
+static void add_reference(arc_buf_hdr_t *hdr, void *tag);
 static void *arc_get_data_buf(arc_buf_hdr_t *, uint64_t, void *);
 static void arc_get_data_impl(arc_buf_hdr_t *, uint64_t, void *);
 static void arc_free_data_abd(arc_buf_hdr_t *, abd_t *, uint64_t, void *);
@@ -2343,6 +2344,48 @@ arc_evictable_space_decrement(arc_buf_hdr_t *hdr, arc_state_t *state)
 		(void) refcount_remove_many(&state->arcs_esize[type],
 		    arc_buf_size(buf), buf);
 	}
+}
+
+void
+arc_buf_add_ref(arc_buf_t *buf, void* tag)
+{
+	arc_buf_hdr_t *hdr;
+	kmutex_t *hash_lock;
+
+	/*
+	 * Check to see if this buffer is evicted.  Callers
+	 * must verify b_data != NULL to know if the add_ref
+	 * was successful.
+	 */
+	mutex_enter(&buf->b_evict_lock);
+	if (buf->b_data == NULL) {
+		mutex_exit(&buf->b_evict_lock);
+		return;
+	}
+	hash_lock = HDR_LOCK(buf->b_hdr);
+	mutex_enter(hash_lock);
+	hdr = buf->b_hdr;
+	ASSERT(HDR_HAS_L1HDR(hdr));
+	ASSERT3P(hash_lock, ==, HDR_LOCK(hdr));
+	mutex_exit(&buf->b_evict_lock);
+
+	if (hdr->b_l1hdr.b_state != arc_mru ||
+	    hdr->b_l1hdr.b_state != arc_mfu) {
+		mutex_exit(hash_lock);
+		return;
+	}
+
+	ASSERT(hdr->b_l1hdr.b_state == arc_mru ||
+	    hdr->b_l1hdr.b_state == arc_mfu);
+
+	add_reference(hdr, tag);
+	DTRACE_PROBE1(arc__hit, arc_buf_hdr_t *, hdr);
+	arc_access(hdr, hash_lock);
+	mutex_exit(hash_lock);
+	ARCSTAT_BUMP(arcstat_hits);
+	ARCSTAT_CONDSTAT(!HDR_PREFETCH(hdr),
+	    demand, prefetch, !HDR_ISTYPE_METADATA(hdr),
+	    data, metadata, hits);
 }
 
 /*
@@ -8989,6 +9032,7 @@ l2arc_stop(void)
 }
 
 #if defined(_KERNEL) && defined(HAVE_SPL)
+EXPORT_SYMBOL(arc_buf_add_ref);
 EXPORT_SYMBOL(arc_buf_size);
 EXPORT_SYMBOL(arc_write);
 EXPORT_SYMBOL(arc_read);
