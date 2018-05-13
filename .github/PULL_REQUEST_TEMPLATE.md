@@ -32,8 +32,8 @@ https://github.com/zfsonlinux/zfs/wiki/Buildbot-Options
 <!--- If you're unsure about any of these, don't hesitate to ask. We're here to help! -->
 - [ ] My code follows the ZFS on Linux [code style requirements](./CONTRIBUTING.md#coding-conventions).
 - [ ] I have updated the documentation accordingly.
-- [ ] I have read the [**CONTRIBUTING** document](./CONTRIBUTING.md).
-- [ ] I have added [tests](../tests/README.md) to cover my changes.
+- [ ] I have read the [**CONTRIBUTING** document](/dinatale2/zfs/blob/master/.github/CONTRIBUTING.md).
+- [ ] I have added [tests](../tests/) to cover my changes.
 - [ ] All new and existing tests passed.
 - [ ] All commit messages are properly formatted and contain [`Signed-off-by`](./CONTRIBUTING.md#signed-off-by).
 - [ ] Change has been approved by a ZFS on Linux member.
